@@ -1,2 +1,2 @@
 # ethereum-zmixer
-Zerocoin protocol on ethereum
+Zerocoin protocol on ethereum.
