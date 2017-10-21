@@ -7,6 +7,7 @@ contract params is bigint_functions {
       * value used for parameter generation in Zcoin.
       * This can be verified by using the paramgen tool in the libzerocoin lib by building project 
       * @ https://github.com/zcoinofficial/zcoin/tree/master/src/libzerocoin.
+      * struct and bigint values will be generated in this contract's cosntructor by the Zcoin team.
       */
     address deployment; //address of contract creators. Ability to perform limited changes and for contract deployment. TBD
     bool is_set = false;
