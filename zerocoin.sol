@@ -1,4 +1,4 @@
-pragma solidity ^0.4.x;
+pragma solidity ^0.4.8;
 
 import "./bigint_functions.sol";
 
@@ -12,7 +12,7 @@ contract zerocoin is bigint_functions, parameters { //inherit all members from b
 
 
     //*************************************** Begin Basic Values ********************************************
-    
+
     //add eth value pool here.
     uint accumulator = 961; //initial value for accumulator (accumulatorBase)
 
