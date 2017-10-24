@@ -1,11 +1,18 @@
-pragma solidity ^0.4.8;
+pragma solidity ^0.4.17;
 
 contract bigint_zerocoin {
     /* 
      *  Bigint library for use with the Zerocoin protocol implementation at address x;
      *  It is however designed for general use.
      *  @author Tadhg Riordan (github.com/riordant)
+     *  Some functions reworked from the bigint 512 lib
      */
+
+    //assume inputs comes in in bytes, WHERE IT'S COMING FROM AN EXTERNAL FUNCTION. - more efficient and can be passed straight in.
+    //however we verify that the max size is not greater than 128 before passing it.
+    //focus should be on optimisation - however for now, get it working and worry about optimisation later.
+
+    //0-3 index: LSB-MSB bits.
 
     uint constant VALUE = 0;
     uint constant SIGN  = 1;
@@ -30,13 +37,13 @@ contract bigint_zerocoin {
     //bigints are of size 256, 512, 1024 or 2048; so size passed as 1,2,4 or 8 respectively.
     struct bigint { 
         uint size;
-        uint[] value; //0-n index: LSB-MSB bits.
+        uint[] value;
         bytes _bytes; //byte encoding of value (for precompiled contract calls)
         bool negative;
     }
     
     //usually we can call the struct constructor directly. this is useful where we have single uint values
-    function create_bigint(uint _size, uint _value, bool _negative) returns (bigint new_bigint){
+    function create_bigint(uint _size, uint _value, bool _negative) public pure returns (bigint new_bigint){
         new_bigint.size = _size;
         new_bigint.value = new uint[](_size);
         new_bigint.value[0] = _value;
@@ -48,43 +55,43 @@ contract bigint_zerocoin {
         
         return new_bigint;
     }
+    
 
-    function add(bigint a, bigint b) private constant returns(bigint sum, uint carry)
-    {
-        uint max = a.size > b.size ? a.size : b.size;
-        uint[] memory empty = new uint[](max);
-        bytes _empty;
-        sum = bigint(max, empty, _empty, false); //set output size to max size of inputs.
+    function add(bigint a, bigint b) private pure returns(bigint sum, uint carry){
+        uint max_size = a.size > b.size ? a.size : b.size;
+        uint[] memory sum_value = new uint[](max_size);
+        //sum = bigint(max_size, empty, _empty, false); //set output size to max_size size of inputs.
 
         // Start from the least significant bits
         for (uint i = 0; i < sum.size; ++i){
-            sum.value[i] = a.value[i] + b.value[i] + carry;
-            if (a.value[i] > max - b.value[i] - carry)  // Check for overflow
+            sum_value[i] = a.value[i] + b.value[i] + carry;
+            if (a.value[i] > max_size - b.value[i] - carry)  // Check for overflow
                 carry = 1;
-            else if (a.value[i] == max && (carry > 0 || b.value[i] > 0)) // Special case
+            else if (a.value[i] == max_size && (carry > 0 || b.value[i] > 0)) // Special case
                 carry = 1;
             else
                 carry = 0;
         }
 
+        sum = bigint(max_size, sum_value, bigint_to_bytes(sum_value), false); //set output size to max_size size of inputs.
+
         return (sum, carry); //carry is 1 if overflow
     }
-
-    function sub(bigint a, bigint b) private constant returns(bigint diff, uint borrow)
-    {
-        uint max = a.size > b.size ? a.size : b.size;
-        uint[] memory empty = new uint[](max);
-        bytes _empty;
-        diff = bigint(max, empty, _empty, false); //set output size to max size of inputs.
+    
+    function sub(bigint a, bigint b) private returns(bigint diff, uint borrow){
+        uint max_size = a.size > b.size ? a.size : b.size;
+        uint[] memory diff_value = new uint[](max_size);
 
         // Start from the least significant bits
         for (uint i = 0; i < a.size; ++i){
-            diff.value[i] = a.value[i] - b.value[i] - borrow;
+            diff_value[i] = a.value[i] - b.value[i] - borrow;
             if (a.value[i] < b.value[i] + borrow || (b.value[i] == max && borrow == 1))   // Check for underflow
                 borrow = 1;
             else
                 borrow = 0;
         }
+
+        diff = bigint(max_size, diff_value, bigint_to_bytes(diff_value), false); //set output size to max_size size of inputs.
 
         return (diff, borrow); //carry is 1 if underflow
     }
@@ -102,17 +109,17 @@ contract bigint_zerocoin {
         uint mod_index;
 
         (add_and_modexp, _sign) = add(a,b);
-        if(_sign==1) throw; //if overflow
+        require(_sign==0); //if overflow
         modulus = create_bigint((add_and_modexp.size*2), 0, false);
         mod_index = get_bit_size(add_and_modexp)*2;
-        modulus.value[mod_index/max] = 1 << (mod_index%max); //set this index to be 1.
+        modulus.value[mod_index/max] = uint(1) << (mod_index%max); //set this index to be 1.
         add_and_modexp = _modexp(add_and_modexp,two,modulus);
 
         (sub_and_modexp, _sign) = sub(a,b);
-        if(_sign==1) throw; //if underflow
+        require(_sign==0); //if underflow
         modulus = create_bigint((sub_and_modexp.size*2), 0, false);
         mod_index = get_bit_size(sub_and_modexp)*2;
-        modulus.value[mod_index/max] = 1 << (mod_index%max); //set this index to be 1.
+        modulus.value[mod_index/max] = uint(1) << (mod_index%max); //set this index to be 1.
         add_and_modexp = _modexp(sub_and_modexp,two,modulus);
         
         (res, _sign) = sub(add_and_modexp,sub_and_modexp);
@@ -130,7 +137,7 @@ contract bigint_zerocoin {
         bigint memory two = create_bigint(1,2,false);
         
         (add_and_modexp, _sign) = add(a,b);
-        if(_sign==1) throw;
+        require(_sign==0);
         add_and_modexp = _modexp(add_and_modexp,two,modulus);
 
         (sub_and_modexp, _sign) = sub(a,b); //no need to handle sign as squared negative==squared positive value.
@@ -162,26 +169,26 @@ contract bigint_zerocoin {
             base = inverse(base, modulus);
             exponent.negative = false; //make e positive
         }
-        bytes memory _result = modexp(base._bytes,exponent._bytes,modulus._bytes); //not recursive - precompiled contract external call
-        bytes memory _result;
-        bigint memory result = new bigint(modulus.size, bytes_to_bigint(_result), _result, false);
-        result = create_bigint(0,0,false);
+        bytes memory _result = modexp(base._bytes,exponent._bytes,modulus._bytes); //not recursive - precompiled contract call
+        result = bigint(modulus.size, bytes_to_bigint(_result), _result, false);
+        //result = create_bigint(0,0,false);
         return result;
      }
 
      function inverse(bigint base, bigint modulus) private returns(bigint new_bigint){
-        //FIXME
+        //TODO
         //Turn this into oracle call
         //verify with modmul - verify (base * result) % m == 1
         return new_bigint;
      }
     
-    function right_shift(bigint dividend, uint value) returns(bigint r){
+    
+    function right_shift(bigint dividend, uint value) private returns(bigint r){
         r = dividend;
         uint shift_value = uint_size-value;
         
         for(uint i = dividend.size-1; i>=0;i--){
-            r.value[i] = (dividend.value[i] >> value) | (dividend.value[(i==(dividend.size-1) ? 0 : (i+1)] << shift_value);
+            r.value[i] = (dividend.value[i] >> value) | (dividend.value[i==(dividend.size-1) ? 0 : i+1] << shift_value);
         }
     }
     
@@ -189,7 +196,7 @@ contract bigint_zerocoin {
      * Comparison function.
      * handles negativity and different sizes of inputs.
      */
-    function cmp(bigint a, bigint b) returns (int) {   
+    function cmp(bigint a, bigint b) private returns (int) {   
         if(is_zero(a) && is_zero(b)) return 0;
         if(a.negative == true && b.negative == false) return -1;
         if(a.negative == false && b.negative == true) return 1;
@@ -219,7 +226,7 @@ contract bigint_zerocoin {
         return EQ;
     }
     
-    function is_zero(bigint bi) returns (bool) {
+    function is_zero(bigint bi) private pure returns (bool) {
         for(uint i=0;i<bi.size;i++){
             if(bi.value[i] != 0){
                 return false;
@@ -228,7 +235,7 @@ contract bigint_zerocoin {
         return true;
     }
 
-    function get_bit_size(bigint n) returns (uint r){
+    function get_bit_size(bigint n) private returns (uint r){
         //gets bit size of bigint.
         //start from most significant uint and loop until > 0.
         //could also potentially be oraclized as it's verifiable in a single operation: true iff ((n >> result) == 1)
@@ -236,10 +243,10 @@ contract bigint_zerocoin {
             if(n.value[i] > 0){
                 //uses log2 function with lookup to find MSB (Bit Twiddling Hacks - Sean Eron Anderson)
                 r = 0;
-                for (int j = 8; i >= 0; i--) {// unrolling
-                    if ((n.value[i] & log2_a[i]) == 1){
-                        n.value[i] >>= log2_b[i];
-                        r  |= log2_b[i];
+                for (uint j = 8; j >= 0; j--) {// unrolling
+                    if ((n.value[i] & log2_a[j]) == 1){
+                        n.value[i] >>= log2_b[j];
+                        r  |= log2_b[j];
                     } 
                 }
 
@@ -248,12 +255,12 @@ contract bigint_zerocoin {
         }
         return 0; //if empty bigint
     }
-
-    function bigint_to_bytes(uint[4] n) returns (bytes32[4] b) {
+    
+    function bigint_to_bytes(uint[] n) public pure returns (bytes b) {
         //FIXME assembly implementation
     }
 
-    function bytes_to_bigint(bytes n) returns (uint[] b) {
+    function bytes_to_bigint(bytes n) public pure returns (uint[] b) {
         //FIXME assembly implementation
     } 
 }
