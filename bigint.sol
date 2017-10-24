@@ -1,16 +1,11 @@
-pragma solidity ^0.4.17;
+pragma solidity ^0.4.8;
 
 contract bigint_zerocoin {
     /* 
-     *  Bigint library for use with the Zerocoin protocol implementation at address x;
+     *  Bigint library for use with the Zerocoin protocol implementation;
      *  It is however designed for general use.
      *  @author Tadhg Riordan (github.com/riordant)
-     *  Some functions reworked from the bigint 512 lib
      */
-
-    //assume inputs comes in in bytes, WHERE IT'S COMING FROM AN EXTERNAL FUNCTION. - more efficient and can be passed straight in.
-    //however we verify that the max size is not greater than 128 before passing it.
-    //focus should be on optimisation - however for now, get it working and worry about optimisation later.
 
     //0-3 index: LSB-MSB bits.
 
@@ -171,7 +166,6 @@ contract bigint_zerocoin {
         }
         bytes memory _result = modexp(base._bytes,exponent._bytes,modulus._bytes); //not recursive - precompiled contract call
         result = bigint(modulus.size, bytes_to_bigint(_result), _result, false);
-        //result = create_bigint(0,0,false);
         return result;
      }
 
