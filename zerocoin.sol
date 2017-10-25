@@ -30,8 +30,8 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
 
     //the following value is used in the commitment PoK verification and is equal to:
     //64 * (COMMITMENT_EQUALITY_CHALLENGE_SIZE (==256) + COMMITMENT_EQUALITY_SECMARGIN (==512) +
-    //      max(max(serialNumberSoKCommitmentGroup.modulus.bitSize(),    accumulatorPoKCommitmentGroup.modulus.bitSize()),
-    //      max(serialNumberSoKCommitmentGroup.groupOrder.bitSize(), accumulatorPoKCommitmentGroup.groupOrder.bitSize())));
+    //      max(max(serial_number_sok_commitment_group.modulus.bit_size(),    accumulator_pok_commitment_group.modulus.bit_size()),
+    //      max(serial_number_sok_commitment_group.group_order.bit_size(), accumulator_pok_commitment_group.group_order.bit_size())));
     uint commitment_pok_max_size;
 
     bigint commitment_pok_challenge_size; // 2^COMMITMENT_EQUALITY_CHALLENGE_SIZE(==256) - 1
@@ -53,36 +53,36 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
     //maxCoinValue * bigint(2).pow(k_prime + k_dprime + 1))
     bigint upper_result_range_value;
     
-    _accumulatorPoKCommitmentGroup accumulatorPoKCommitmentGroup;
-    _accumulatorQRNCommitmentGroup accumulatorQRNCommitmentGroup;
-    _coinCommitmentGroup coinCommitmentGroup;
-    _serialNumberSoKCommitmentGroup serialNumberSoKCommitmentGroup;
+    _accumulator_pok_commitment_group accumulator_pok_commitment_group;
+    _accumulator_qrn_commitment_group accumulator_qrn_commitment_group;
+    _coin_commitment_group coin_commitment_group;
+    _serial_number_sok_commitment_group serial_number_sok_commitment_group;
 
     //these structs will be assigned in contract contructor.
-    struct _accumulatorPoKCommitmentGroup{
+    struct _accumulator_pok_commitment_group{
         bigint g;
         bigint h;
         bigint modulus;
-        bigint groupOrder;
+        bigint group_order;
     }
 
-    struct _accumulatorQRNCommitmentGroup{
+    struct _accumulator_qrn_commitment_group{
         bigint g;
         bigint h;
     }
 
-    struct _coinCommitmentGroup{
-        bigint g;
-        bigint h;
-        bigint modulus;
-        bigint groupOrder;
-    }
-
-    struct _serialNumberSoKCommitmentGroup{
+    struct _coin_commitment_group{
         bigint g;
         bigint h;
         bigint modulus;
-        bigint groupOrder;
+        bigint group_order;
+    }
+
+    struct _serial_number_sok_commitment_group{
+        bigint g;
+        bigint h;
+        bigint modulus;
+        bigint group_order;
     }
     //*************************************** End Parameters ********************************************
 
@@ -199,9 +199,9 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
 
         //serialize bytes inputs as struct objects.
 
-        require(verify_commitment_pok(c_pok, serial_number_commitment, accumulator_commitment) &&
-                verify_accumulator_pok(accumulator, accumulator_commitment) &&
-                verify_serial_number_sok(coin_serial_number, serial_number_commitment));
+        require(verify_commitment_pok(commitment_pok, serial_number_commitment, accumulator_commitment) &&
+                verify_accumulator_pok(accumulator_pok, accumulator, accumulator_commitment) &&
+                verify_serial_number_sok(serial_number_sok, coin_serial_number, serial_number_commitment));
         
         //send denomination of eth from value pool to output_address
         //add coin_serial_number to map of used serial numbers
@@ -223,18 +223,18 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
             
 
         // Compute T1 = g1^S1 * h1^S2 * inverse(A^{challenge}) mod p1
-        bigint T1 = pow_mod(serial_number_commitment, challenge, serialNumberSoKCommitmentGroup.modulus);
-        T1 = inverse(T1, serialNumberSoKCommitmentGroup.modulus);
+        bigint T1 = pow_mod(serial_number_commitment, challenge, serial_number_sok_commitment_group.modulus);
+        T1 = inverse(T1, serial_number_sok_commitment_group.modulus);
         T1 = mul_mod(T1, 
-                    mul_mod(pow_mod(serialNumberSoKCommitmentGroup.g, S1, serialNumberSoKCommitmentGroup.modulus), pow_mod(serialNumberSoKCommitmentGroup.h, S2, serialNumberSoKCommitmentGroup.modulus), serialNumberSoKCommitmentGroup.modulus),
-                    serialNumberSoKCommitmentGroup.modulus);
+                    mul_mod(pow_mod(serial_number_sok_commitment_group.g, S1, serial_number_sok_commitment_group.modulus), pow_mod(serial_number_sok_commitment_group.h, S2, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus),
+                    serial_number_sok_commitment_group.modulus);
 
         // Compute T2 = g2^S1 * h2^S3 * inverse(B^{challenge}) mod p2
-        bigint T2 = pow_mod(accumulator_commitment, challenge, accumulatorPoKCommitmentGroup.modulus);
-        T2 = inverse(T2, accumulatorPoKCommitmentGroup.modulus);
+        bigint T2 = pow_mod(accumulator_commitment, challenge, accumulator_pok_commitment_group.modulus);
+        T2 = inverse(T2, accumulator_pok_commitment_group.modulus);
         T2 = mul_mod(T2,
-                    mul_mod(pow_mod( accumulatorPoKCommitmentGroup.g, S1,  accumulatorPoKCommitmentGroup.modulus), pow_mod( accumulatorPoKCommitmentGroup.h, S3,  accumulatorPoKCommitmentGroup.modulus),  accumulatorPoKCommitmentGroup.modulus),
-                    accumulatorPoKCommitmentGroup.modulus);
+                    mul_mod(pow_mod( accumulator_pok_commitment_group.g, S1,  accumulator_pok_commitment_group.modulus), pow_mod( accumulator_pok_commitment_group.h, S3,  accumulator_pok_commitment_group.modulus),  accumulator_pok_commitment_group.modulus),
+                    accumulator_pok_commitment_group.modulus);
 
         // Hash T1 and T2 along with all of the public parameters
         Bignum computed_challenge = calculate_challenge_commitment_pok(serial_number_commitment, accumulator_commitment, T1, T2);
@@ -271,68 +271,65 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
     }
 
     function calculate_challenge_serial_number_pok(bigint a_exp, bigint b_exp, bigint h_exp) private returns (bigint){
-        bigint a = coinCommitmentGroup.g;
-        bigint b = coinCommitmentGroup.h;
-        bigint g = serialNumberSoKCommitmentGroup.g;
-        bigint h = serialNumberSoKCommitmentGroup.h;
+        bigint a = coin_commitment_group.g;
+        bigint b = coin_commitment_group.h;
+        bigint g = serial_number_sok_commitment_group.g;
+        bigint h = serial_number_sok_commitment_group.h;
 
-        //both of those operations are modmuls.
-        bigint exponent = (pow_mod(a, a_exp, serialNumberSoKCommitmentGroup.groupOrder) * pow_mod(b, b_exp, serialNumberSoKCommitmentGroup.groupOrder)) % serialNumberSoKCommitmentGroup.groupOrder;
 
-        return mul_mod(pow_mod(g, exponent, serialNumberSoKCommitmentGroup.modulus), pow_mod(h, h_exp, serialNumberSoKCommitmentGroup.modulus), serialNumberSoKCommitmentGroup.modulus);   
+        //both of these operations are modmuls.
+        bigint exponent = mul_mod(pow_mod(a, a_exp, serial_number_sok_commitment_group.group_order), pow_mod(b, b_exp, serial_number_sok_commitment_group.group_order), serial_number_sok_commitment_group.group_order);
+
+        return mul_mod(pow_mod(g, exponent, serial_number_sok_commitment_group.modulus), pow_mod(h, h_exp, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus);   
     }
 
     function verify_serial_number_sok(_serial_number_sok serial_number_sok, bigint coin_serial_number, bigint serial_number_commitment) private returns (bool result){
 
-        //initially verify that coin_serial_number has not already been accumulated. mapping gives O(1) access
+        //initially verify that coin_serial_number has not already been used. mapping gives O(1) access
         if((serial_numbers[sha256(coin_serial_number)] == coin_serial_number)) throw;
         
-        bigint a = coinCommitmentGroup.g;
-        bigint b = coinCommitmentGroup.h;
-        bigint g = serialNumberSoKCommitmentGroup.g;
-        bigint h = serialNumberSoKCommitmentGroup.h;
+        bigint a = coin_commitment_group.g;
+        bigint b = coin_commitment_group.h;
+        bigint g = serial_number_sok_commitment_group.g;
+        bigint h = serial_number_sok_commitment_group.h;
 
-        bytes hasher_bytes = params_bytes + uint_to_bytes(serial_number_commitment) + uint_to_bytes(coin_serial_number);
-
-        //hash hasher_bytes into hasher
+        bytes hasher;
+        //hasher << *params << valueOfCommitmentToCoin <<coinSerialNumber;
+        //hash the above into hasher
 
         bigint[zkp_iterations] tprime;
 
-        bytes32 hashbytes = bytes32(hash);
-
         for(uint i = 0; i < zkp_iterations; i++) {
-            int bit = i % 8;
-            int byte = i / 8;
-            int challenge_bit = ((hashbytes[byte] >> bit) & 0x01);
+            uint bit = i % 8;
+            uint byte = i / 8;
+            uint challenge_bit = ((serial_number_sok.hash[byte] >> bit) & 0x01);
             if(challenge_bit == 1) {
                 tprime[i] = calculate_challenge_serial_number_pok(coin_serial_number, serial_number_sok.s_notprime[i], serial_number_sok.sprime[i]);
             } else {
-                Bignum exp = pow_mod(b, serial_number_sok.s_notprime[i], serialNumberSoKCommitmentGroup.groupOrder);
-                tprime[i] = mul_mod(pow_mod(pow_mod(serial_number_commitment, exp, serialNumberSoKCommitmentGroup.modulus), 1, serialNumberSoKCommitmentGroup.modulus),
-                                    pow_mod(pow_mod(h, serial_number_sok.sprime[i], serialNumberSoKCommitmentGroup.modulus), 1, serialNumberSoKCommitmentGroup.modulus),
-                                    serialNumberSoKCommitmentGroup.modulus);
+                Bignum exp = pow_mod(b, serial_number_sok.s_notprime[i], serial_number_sok_commitment_group.group_order);
+                tprime[i] = mul_mod(pow_mod(pow_mod(serial_number_commitment, exp, serial_number_sok_commitment_group.modulus), 1, serial_number_sok_commitment_group.modulus),
+                                    pow_mod(pow_mod(h, serial_number_sok.sprime[i], serial_number_sok_commitment_group.modulus), 1, serial_number_sok_commitment_group.modulus),
+                                    serial_number_sok_commitment_group.modulus);
             }
         }
-        for(uint32_t i = 0; i < zkp_iterations; i++) {
-            hasher << tprime[i];
+        for(uint i = 0; i < zkp_iterations; i++) {
+            hasher.push(tprime[i]);
         }
-        return hasher.GetArith256Hash() == hash;
+        return (sha256(hasher) == serial_number_sok.hash);
         
         }
     
-    function calculate_accumulator_hash()
-
     // Verifies that a commitment c is accumulated in accumulator a
     function verify_accumulator_pok(_accumulator_pok accumulator_pok, bigint accumulator, bigint accumulator_commitment) private returns (bool){
 
         //initially verify that accumulator exists. mapping gives O(1) access
         if(!(serial_numbers[sha256(accumulator)] == accumulator)) throw;
 
-        bigint sg = accumulatorPoKCommitmentGroup.g;
-        bigint sh = accumulatorPoKCommitmentGroup.h;
+        bigint sg = accumulator_pok_commitment_group.g;
+        bigint sh = accumulator_pok_commitment_group.h;
 
-        bigint g_n = accumulatorQRNCommitmentGroup.g;
-        bigint h_n = accumulatorQRNCommitmentGroup.h;
+        bigint g_n = accumulator_qrn_commitment_group.g;
+        bigint h_n = accumulator_qrn_commitment_group.h;
 
         bytes hasher;
         //hasher << *params << sg << sh << g_n << h_n << accumulator_commitment << accumulator_pok.C_e << accumulator_pok.C_u << accumulator_pok.C_r << accumulator_pok.st[0] << accumulator_pok.st[1] << accumulator_pok.st[2] << accumulator_pok.t[0] << accumulator_pok.t[1] << accumulator_pok.t[2] << accumulator_pok.t[3];
@@ -344,20 +341,20 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
 
         bigint A,B,C;
 
-        A = pow_mod(accumulator_commitment, c, accumulatorPoKCommitmentGroup.modulus);
-        B = pow_mod(sg, accumulator_pok.s_alpha, accumulatorPoKCommitmentGroup.modulus);
-        C = pow_mod(sh, accumulator_pok.s_phi, accumulatorPoKCommitmentGroup.modulus);
-        st_prime[0] = pow_mod(mul(mul(A,B),C), 1, accumulatorPoKCommitmentGroup.modulus;                        
+        A = pow_mod(accumulator_commitment, c, accumulator_pok_commitment_group.modulus);
+        B = pow_mod(sg, accumulator_pok.s_alpha, accumulator_pok_commitment_group.modulus);
+        C = pow_mod(sh, accumulator_pok.s_phi, accumulator_pok_commitment_group.modulus);
+        st_prime[0] = pow_mod(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus;                        
 
-        A = pow_mod(sg, c, accumulatorPoKCommitmentGroup.modulus);
-        B = pow_mod(mul(accumulator_commitment,inverse(sg,accumulatorPoKCommitmentGroup.modulus)), accumulator_pok.s_gamma, accumulatorPoKCommitmentGroup.modulus);
-        C = pow_mod(sh, accumulator_pok.s_psi, accumulatorPoKCommitmentGroup.modulus);
-        st_prime[1] = pow_mod(mul(mul(A,B),C), 1, accumulatorPoKCommitmentGroup.modulus;                        
+        A = pow_mod(sg, c, accumulator_pok_commitment_group.modulus);
+        B = pow_mod(mul(accumulator_commitment,inverse(sg,accumulator_pok_commitment_group.modulus)), accumulator_pok.s_gamma, accumulator_pok_commitment_group.modulus);
+        C = pow_mod(sh, accumulator_pok.s_psi, accumulator_pok_commitment_group.modulus);
+        st_prime[1] = pow_mod(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus;                        
 
-        A = pow_mod(sg, c, accumulatorPoKCommitmentGroup.modulus);
-        B = pow_mod(mul(sg,accumulator_commitment),accumulator_pok.s_sigma, accumulatorPoKCommitmentGroup.modulus);
-        C = pow_mod(sh, accumulator_pok.s_xi, accumulatorPoKCommitmentGroup.modulus);
-        st_prime[2] = pow_mod(mul(mul(A,B),C), 1, accumulatorPoKCommitmentGroup.modulus; 
+        A = pow_mod(sg, c, accumulator_pok_commitment_group.modulus);
+        B = pow_mod(mul(sg,accumulator_commitment),accumulator_pok.s_sigma, accumulator_pok_commitment_group.modulus);
+        C = pow_mod(sh, accumulator_pok.s_xi, accumulator_pok_commitment_group.modulus);
+        st_prime[2] = pow_mod(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus; 
 
 
         A = pow_mod(accumulator_pok.C_r, c, modulus);
