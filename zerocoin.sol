@@ -152,24 +152,6 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
 
     //********************************* End Temporary Proof Structures //*****************************************
 
-    //********************************* Begin Misc. Functions ****************************************************
-    
-
-    function serialized_bytes_to_bigint(bytes input, string proof) private returns (bigint result){
-
-
-    }
-
-    function serialized_struct_to_bigint(bytes input, string proof) private returns (bigint result){
-
-        if(proof=="commitment_pok"){
-            commitment_pok
-        }
-
-    }
-
-    //********************************* End Misc. Functions ******************************************************
-
     
     //********************************* Begin 'Mint' validation ****************************************************
     function validate_coin_mint(bytes _commitment) returns (bool success){
