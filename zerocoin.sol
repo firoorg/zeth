@@ -152,6 +152,14 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
 
     //********************************* End Temporary Proof Structures //*****************************************
 
+    //*************************************** Begin Constructor **************************************************
+    function zerocoin(address _in){
+        require(!is_set && _in==deployment);
+        //add parameters
+        //initialize structures
+    }
+    //***************************************** End Constructor **************************************************
+
     
     //********************************* Begin 'Mint' validation ****************************************************
     function validate_coin_mint(bytes _commitment) returns (bool success){
