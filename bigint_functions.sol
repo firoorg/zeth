@@ -260,7 +260,6 @@ contract bigint_functions {
         
         bytes memory _modulus = hex"00";
         assembly {
-            _modulus := add(msize()
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
             mstore(add(_modulus,0x20), val)
         }
@@ -272,11 +271,15 @@ contract bigint_functions {
         sub_and_modexp = prepare_sub(a,b);
         mod_index = sub_and_modexp.msb * 2;
         val = uint(1) << (mod_index % 256);
+
+        _modulus = hex"00";
         assembly {
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
             mstore(add(_modulus,0x20), val) 
         }
-        modulus = bigint(_modulus, false, mod_index);
+        modulus.val = _modulus;
+        modulus.neg = false;
+        modulus.msb = mod_index;
         sub_and_modexp = prepare_modexp(sub_and_modexp,two,modulus);
         
         res = prepare_sub(add_and_modexp,sub_and_modexp);
@@ -419,7 +422,7 @@ contract bigint_functions {
 
         }
 
-        return 0; //same value.
+        return 0; // same value.
     }
     
 
