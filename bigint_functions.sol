@@ -26,12 +26,13 @@ contract bigint_functions {
      8f77effc - word 3
 
      our scheme is the same as above with 32 byte words. This is actually how the uint array represents values (bar the length being the number of words as opposed to number of bytes), but the rationale here is that as we are manipulating values in memory anyway, it's unnecessary to use uint[]. 
-     (also, the modexp function expects as parameters, AND returns, bytes, so it saves the conversion either side.
+     (also, the modexp function expects as parameters, AND returns, bytes, so it saves the conversion either side).
      why the right shift? this is a kind of 'normalisation'. values will 'line up' with their number representation in memory and so it saves us the hassle of trying to manage the offset when performing operations like add and subtract.
 
      the sign of the value is controlled artificially, as is the case with other big integer libraries. at present the msb is tracked throughout the lifespan of the bigint instance.
 
-     when the caller creates a bigint in the zerocoin contract, they also indicate the most significant bit of the value. this is verified in the contract by right shifting the most significant word by the passed value mod 256, and verifying the result is equal to 1. the value itself, therefore, is the overall msb of the bigint value. ie. of the value is 512 bits long, and msb is 2nd highest bit from the end, the msb in the struct = 510 (necessary for cmp).
+     when the caller creates a bigint in the zerocoin contract, they also indicate the most significant bit of the value. this is verified in the contract by right shifting the most significant word by the passed value mod 256, and verifying the result is equal to 1. 
+     the value itself, therefore, is the overall msb of the bigint value. ie. of the value is 512 bits long, and msb is 2nd highest bit from the end, the msb in the struct = 510 (necessary for cmp).
     */
 
     struct bigint { 
@@ -137,14 +138,16 @@ contract bigint_functions {
     function prepare_sub(bigint a, bigint b) private returns(bigint r) {
         bigint memory zero = bigint(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
         bytes memory val;
+        int compare;
         uint msb;
         if(a.neg || b.neg) {
             if(a.neg && b.neg){
-                if(a.msb>b.msb) { 
+                compare = cmp(a,b);
+                if(compare == 1) { 
                     (val,msb) = bn_sub(a.val,b.val,a.msb,b.msb); 
                     r.neg = true;
                 }
-                else if(b.msb>a.msb) { 
+                else if(compare == -1) { 
 
                     (val,msb) = bn_sub(b.val,a.val,a.msb,b.msb); 
                     r.neg = false;
@@ -161,11 +164,12 @@ contract bigint_functions {
              }
         }
         else {
-            if(a.msb>b.msb) {
+            compare = cmp(a,b);
+            if(compare == 1) {
                 (val,msb) = bn_sub(a.val,b.val,a.msb,b.msb);
                 r.neg = false;
              }
-            else if(b.msb>a.msb) { 
+            else if(compare == -1) { 
                 (val,msb) = bn_sub(b.val,a.val,a.msb,b.msb);
                 r.neg = true;
             }
@@ -247,25 +251,22 @@ contract bigint_functions {
         bigint memory sub_and_modexp;
         bigint memory modulus;
         
-        bigint memory two = bigint(hex"0000000000000000000000000000000000000000000000000000000000000002",false,1); 
-        
-        uint mod_index;
-        uint val;
-        bytes memory _modulus;
-        
+        bytes memory two_val = hex"0000000000000000000000000000000000000000000000000000000000000002";
+        bigint memory two = bigint(two_val,false,1);        
+                
         add_and_modexp = prepare_add(a,b);
-        mod_index = add_and_modexp.msb * 2;
-        val = uint(1) << (mod_index % 256);
+        uint mod_index = add_and_modexp.msb * 2;
+        uint val = uint(1) << (mod_index % 256);
         
+        bytes memory _modulus = hex"00";
         assembly {
-            _modulus := msize()
+            _modulus := add(msize()
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
             mstore(add(_modulus,0x20), val)
         }
         modulus.val = _modulus;
         modulus.neg = false;
         modulus.msb = mod_index;
-        //modulus = bigint(_modulus, false, mod_index);
         add_and_modexp = prepare_modexp(add_and_modexp,two,modulus);
 
         sub_and_modexp = prepare_sub(a,b);
@@ -278,16 +279,14 @@ contract bigint_functions {
         modulus = bigint(_modulus, false, mod_index);
         sub_and_modexp = prepare_modexp(sub_and_modexp,two,modulus);
         
-        //res = prepare_sub(add_and_modexp,sub_and_modexp);
-        // res = right_shift(res, 2); // LHS - RHS / 4
-        
-        res = add_and_modexp;
+        res = prepare_sub(add_and_modexp,sub_and_modexp);
+        res = right_shift(res, 2); // LHS - RHS / 4
      }
     
-    // function bn_div(bigint a, bigint b) private returns(bigint res){
-    //     //TODO turn into oracle call. we will setup api with oraclize. (this is not actually necessary for zerocoin but including it anyway for the sake of the library).
+    function bn_div(bigint a, bigint b) private returns(bigint res){
+        //TODO turn into oracle call. we will setup api with oraclize. (this is not actually necessary for zerocoin but including it anyway for the sake of the library).
 
-    // }
+    }
     
     function prepare_modexp(bigint base, bigint exponent, bigint modulus) private returns(bigint result) {
         if(exponent.neg==true){ 
@@ -391,6 +390,36 @@ contract bigint_functions {
             let in_ptr := add(_in, sub(mload(_in), 0x20)) //go to last value
             ret := mod(mload(in_ptr),2)
         }
+    }
+
+    function cmp(bigint a, bigint b) private returns(int){
+        if(a.msb>b.msb) return 1;
+        if(b.msb>a.msb) return -1;
+
+        uint a_ptr;
+        uint b_ptr;
+        uint a_word;
+        uint b_word;
+
+        uint len = a.val.length; //msb is same so no need to check length.
+
+        assembly{
+            a_ptr := add(mload(a),0x20) 
+            b_ptr := add(mload(b),0x20) // 'a' and 'b' store the memory address of 'val' of the struct.
+        }
+
+        for(uint i=0; i<len;i+=32){
+            assembly{
+                a_word := mload(add(a_ptr,i))
+                b_word := mload(add(b_ptr,i))
+            }
+
+            if(a_word>b_word) return 1;
+            if(b_word>a_word) return -1;
+
+        }
+
+        return 0; //same value.
     }
     
 
