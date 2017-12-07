@@ -1,4 +1,4 @@
-pragma solidity ^0.4.18;
+pragma solidity ^0.4.19;
 
 contract bigint_functions {
     /*
@@ -41,7 +41,7 @@ contract bigint_functions {
         uint msb;
 
     }
-
+    
     //in order to do correct addition or subtraction we have to handle the sign.
     //the following two functions takes two bigints, discovers the sign of the result based on the values, and calls the correct operation.
     function prepare_add(bigint a, bigint b) private returns(bigint r) {
@@ -241,7 +241,7 @@ contract bigint_functions {
         
         return (c, a_msb);
     }
-    
+        
     function bn_mul(bigint a, bigint b) private returns(bigint res){
         // (a * b) = (((a + b)**2 - (a - b)**2) / 4
         // we use modexp contract for squaring of (a # b), passing modulus as 1|0*n, where n = 2 * bit length of (a # b) (and # = +/- depending on call).
@@ -253,12 +253,16 @@ contract bigint_functions {
         
         bytes memory two_val = hex"0000000000000000000000000000000000000000000000000000000000000002";
         bigint memory two = bigint(two_val,false,1);        
-                
-        add_and_modexp = prepare_add(a,b);
-        uint mod_index = add_and_modexp.msb * 2;
-        uint val = uint(1) << (mod_index % 256);
         
-        bytes memory _modulus = hex"00";
+        uint mod_index;
+        uint val;
+        bytes memory _modulus;
+        
+        add_and_modexp = prepare_add(a,b);
+        mod_index = (++add_and_modexp.msb) * 2;
+        val = uint(1) << ((mod_index % 256));
+        
+        _modulus = hex"00";
         assembly {
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
             mstore(add(_modulus,0x20), val)
@@ -267,15 +271,15 @@ contract bigint_functions {
         modulus.neg = false;
         modulus.msb = mod_index;
         add_and_modexp = prepare_modexp(add_and_modexp,two,modulus);
-
+        
         sub_and_modexp = prepare_sub(a,b);
-        mod_index = sub_and_modexp.msb * 2;
-        val = uint(1) << (mod_index % 256);
-
+        mod_index = (++sub_and_modexp.msb) * 2;
+        val = uint(1) << ((mod_index % 256));
+        
         _modulus = hex"00";
         assembly {
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
-            mstore(add(_modulus,0x20), val) 
+            mstore(add(_modulus,0x20), val)
         }
         modulus.val = _modulus;
         modulus.neg = false;
@@ -284,12 +288,15 @@ contract bigint_functions {
         
         res = prepare_sub(add_and_modexp,sub_and_modexp);
         res = right_shift(res, 2); // LHS - RHS / 4
+
+        //res = sub_and_modexp;
+        
      }
     
-    function bn_div(bigint a, bigint b) private returns(bigint res){
-        //TODO turn into oracle call. we will setup api with oraclize. (this is not actually necessary for zerocoin but including it anyway for the sake of the library).
+    // function bn_div(bigint a, bigint b) private returns(bigint res){
+    //     //TODO turn into oracle call. we will setup api with oraclize. (this is not actually necessary for zerocoin but including it anyway for the sake of the library).
 
-    }
+    // }
     
     function prepare_modexp(bigint base, bigint exponent, bigint modulus) private returns(bigint result) {
         if(exponent.neg==true){ 
@@ -303,7 +310,9 @@ contract bigint_functions {
         uint msb;
         assembly { msb := add(_result,0x20)}
         msb = get_uint_size(msb) + (modulus.val.length /32)-1; 
-        result = bigint(_result, base.neg, msb);
+        result.val = _result;
+        result.neg = base.neg;
+        result.msb = msb;
         return result;
      }
     
@@ -311,10 +320,13 @@ contract bigint_functions {
     //this function takes in bytes values and returns a tightly packed byte array. we then convert this into our scheme
     function modexp(bytes memory _base, bytes memory _exp, bytes memory _mod) private view returns(bytes memory ret) {
         
-        uint256 bl = _base.length;
-        uint256 el = _exp.length;
-        uint256 ml = _mod.length;
+
         assembly {
+            
+            let bl := mload(_base)
+            let el := mload(_exp)
+            let ml := mload(_mod)
+            
             // Free memory pointer is always stored at 0x40
             let freemem := mload(0x40)
             
@@ -348,6 +360,8 @@ contract bigint_functions {
             //assuming mod length is multiple of 32, return value is already in the right format.
             //function visibility is changed to private to reflect this.
             ret := add(64,freemem) 
+            
+            mstore(0x40, add(add(96, freemem),ml)) //deallocate freemem pointer
         }
         
     }
@@ -422,7 +436,7 @@ contract bigint_functions {
 
         }
 
-        return 0; // same value.
+        return 0; //same value.
     }
     
 
