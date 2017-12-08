@@ -1,10 +1,10 @@
-pragma solidity ^0.4.19;
+pragma solidity ^0.4.18;
 
-contract bigint_functions {
+library BigNumber {
     /*
-     values in memory on the EVM are in 256 bit words - bigints are considered to be consecutive words in big-endian order (top-bottom: word 0 - word n).
-     the bigint value is in the 'bytes' data structure. by default, this data structure is 'tightly packed', ie. it has no leading zeroes, and it has a 'length' word indicating the number of bytes in the structure.
-     we consider each bigint value to NOT be tightly packed in the bytes data structure, and where the length byte is equal the number of words * 32. 
+     values in memory on the EVM are in 256 bit words - BigNumbers are considered to be consecutive words in big-endian order (top-bottom: word 0 - word n).
+     the BigNumber value is in the 'bytes' data structure. by default, this data structure is 'tightly packed', ie. it has no leading zeroes, and it has a 'length' word indicating the number of bytes in the structure.
+     we consider each BigNumber value to NOT be tightly packed in the bytes data structure, and where the length byte is equal the number of words * 32. 
      for explanation's sake, imagine that solidity had a 32 bit word width, and the following value (in bytes):
 
      ae1b6b9f1be57476a6948f77effc
@@ -29,23 +29,22 @@ contract bigint_functions {
      (also, the modexp function expects as parameters, AND returns, bytes, so it saves the conversion either side).
      why the right shift? this is a kind of 'normalisation'. values will 'line up' with their number representation in memory and so it saves us the hassle of trying to manage the offset when performing operations like add and subtract.
 
-     the sign of the value is controlled artificially, as is the case with other big integer libraries. at present the msb is tracked throughout the lifespan of the bigint instance.
+     the sign of the value is controlled artificially, as is the case with other big integer libraries. at present the msb is tracked throughout the lifespan of the BigNumber instance.
 
-     when the caller creates a bigint in the zerocoin contract, they also indicate the most significant bit of the value. this is verified in the contract by right shifting the most significant word by the passed value mod 256, and verifying the result is equal to 1. 
-     the value itself, therefore, is the overall msb of the bigint value. ie. of the value is 512 bits long, and msb is 2nd highest bit from the end, the msb in the struct = 510 (necessary for cmp).
+     when the caller creates a BigNumber in the zerocoin contract, they also indicate the most significant bit of the value. this is verified in the contract by right shifting the most significant word by the passed value mod 256, and verifying the result is equal to 1. 
+     the value itself, therefore, is the overall msb of the BigNumber value. ie. of the value is 512 bits long, and msb is 2nd highest bit from the end, the msb in the struct = 510 (necessary for cmp).
     */
 
-    struct bigint { 
+    struct BigNumber { 
         bytes val;
         bool neg;
         uint msb;
-
     }
     
     //in order to do correct addition or subtraction we have to handle the sign.
-    //the following two functions takes two bigints, discovers the sign of the result based on the values, and calls the correct operation.
-    function prepare_add(bigint a, bigint b) private returns(bigint r) {
-        bigint memory zero = bigint(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
+    //the following two functions takes two BigNumbers, discovers the sign of the result based on the values, and calls the correct operation.
+    function prepare_add(BigNumber a, BigNumber b) internal returns(BigNumber r) {
+        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
         bytes memory val;
         uint msb;
         if(a.neg || b.neg){
@@ -74,10 +73,10 @@ contract bigint_functions {
         r.msb = msb;
     }
 
-    //add function. takes two bigint values, the msb of the max value, and whether or not the result will be negative.
+    //add function. takes two BigNumber values, the msb of the max value, and whether or not the result will be negative.
     //the values may be of different sizes. sign is handled from the prepare_add function.
-    //the function calculates the new msb (basically if msbs are the same, max_msb++) and returns a new bigint.
-    function bn_add(bytes a, bytes b, uint a_msb, uint b_msb) private returns (bytes memory, uint) {
+    //the function calculates the new msb (basically if msbs are the same, max_msb++) and returns a new BigNumber.
+    function bn_add(bytes a, bytes b, uint a_msb, uint b_msb) internal returns (bytes memory, uint) {
 
         uint carry = 0;
         bytes memory c;
@@ -135,8 +134,8 @@ contract bigint_functions {
         return (c, (a_msb==b_msb) ? ++a_msb : a_msb);
     }
 
-    function prepare_sub(bigint a, bigint b) private returns(bigint r) {
-        bigint memory zero = bigint(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
+    function prepare_sub(BigNumber a, BigNumber b) internal returns(BigNumber r) {
+        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
         bytes memory val;
         int compare;
         uint msb;
@@ -183,7 +182,7 @@ contract bigint_functions {
  
 
    //sub function. similar to add above, except we pass the msb of both values (this is needed for msb calculation at the end)
-   function bn_sub(bytes a, bytes b, uint a_msb, uint b_msb) private returns (bytes memory, uint) {
+   function bn_sub(bytes a, bytes b, uint a_msb, uint b_msb) internal returns (bytes memory, uint) {
         //assuming here that values arrive from prepare_sub as a=max and b=min (or both the same size)
         bytes memory c;
         assembly {
@@ -242,17 +241,17 @@ contract bigint_functions {
         return (c, a_msb);
     }
 
-    function bn_mul(bigint a, bigint b) private returns(bigint res){
+    function bn_mul(BigNumber a, BigNumber b) internal returns(BigNumber res){
         // (a * b) = (((a + b)**2 - (a - b)**2) / 4
         // we use modexp contract for squaring of (a # b), passing modulus as 1|0*n, where n = 2 * bit length of (a # b) (and # = +/- depending on call).
         // therefore the modulus is the minimum value we can pass that will allow us to do the squaring.
         
-        bigint memory add_and_modexp;
-        bigint memory sub_and_modexp;
-        bigint memory modulus;
+        BigNumber memory add_and_modexp;
+        BigNumber memory sub_and_modexp;
+        BigNumber memory modulus;
         
         bytes memory two_val = hex"0000000000000000000000000000000000000000000000000000000000000002";
-        bigint memory two = bigint(two_val,false,1);        
+        BigNumber memory two = BigNumber(two_val,false,1);        
         
         uint mod_index;
         uint val;
@@ -293,12 +292,12 @@ contract bigint_functions {
         
      }
     
-    // function bn_div(bigint a, bigint b) private returns(bigint res){
+    // function bn_div(BigNumber a, BigNumber b) internal returns(BigNumber res){
     //     //TODO turn into oracle call. we will setup api with oraclize. (this is not actually necessary for zerocoin but including it anyway for the sake of the library).
 
     // }
     
-    function prepare_modexp(bigint base, bigint exponent, bigint modulus) private returns(bigint result) {
+    function prepare_modexp(BigNumber base, BigNumber exponent, BigNumber modulus) internal returns(BigNumber result) {
         if(exponent.neg==true){ 
             // base^-exp = (base^-1)^exp
             //base = inverse(base, modulus); TODO implement inverse function
@@ -316,9 +315,9 @@ contract bigint_functions {
         return result;
      }
     
-    // Wrapper for built-in bigint_modexp (contract 0x5) as described here. https://github.com/ethereum/EIPs/pull/198
+    // Wrapper for built-in BigNumber_modexp (contract 0x5) as described here. https://github.com/ethereum/EIPs/pull/198
     //this function takes in bytes values and returns a tightly packed byte array. we then convert this into our scheme
-    function modexp(bytes memory _base, bytes memory _exp, bytes memory _mod) private view returns(bytes memory ret) {
+    function modexp(bytes memory _base, bytes memory _exp, bytes memory _mod) internal view returns(bytes memory ret) {
         
 
         assembly {
@@ -358,49 +357,21 @@ contract bigint_functions {
             
             // point to the location of the return value (length, bits)
             //assuming mod length is multiple of 32, return value is already in the right format.
-            //function visibility is changed to private to reflect this.
+            //function visibility is changed to internal to reflect this.
             ret := add(64,freemem) 
             
             mstore(0x40, add(add(96, freemem),ml)) //deallocate freemem pointer
         }
         
     }
-
-
-    function test_modmul() public returns (bytes){
-        bigint memory a;
-        bigint memory b;
-        bigint memory modulus;
-
-        
-        bytes memory a_val = hex"00000000000000000000000000000000000000000000000000000000000000FF";
-        bytes memory b_val = hex"00000000000000000000000000000000000000000000000000000000000000FE";
-        bytes memory _modulus = hex"000000000000000000000000000000000000000000000000000000000000002F";
-        
-        a.val = a_val;
-        b.val = b_val;
-        modulus.val = _modulus;
-
-        a.neg = false;
-        b.neg = false;
-        modulus.neg = false;
-
-        a.msb = 7;
-        b.msb = 7;
-        modulus.msb = 5;
-
-        bigint memory res = modmul(a,b,modulus);
-        
-        return res.val;
-    }
     
-    function modmul(bigint a, bigint b, bigint modulus) private returns(bigint res){
+    function modmul(BigNumber a, BigNumber b, BigNumber modulus) internal returns(BigNumber res){
         //calls to modexp with certain values
         //(a * b) % m = (((a + b)**2 - (a - b)**2) / 4) % m
-        bigint memory add_and_modexp;
-        bigint memory sub_and_modexp;
+        BigNumber memory add_and_modexp;
+        BigNumber memory sub_and_modexp;
         
-        bigint memory two = bigint(hex"0000000000000000000000000000000000000000000000000000000000000002",false,1); 
+        BigNumber memory two = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000002",false,1); 
 
         add_and_modexp = prepare_add(a,b);
         add_and_modexp = prepare_modexp(add_and_modexp, two, modulus);
@@ -423,21 +394,21 @@ contract bigint_functions {
         
     }
 
-    function inverse(bigint base, bigint modulus) private returns(bigint new_bigint){
+    function inverse(BigNumber base, BigNumber modulus) internal returns(BigNumber new_BigNumber){
         //TODO Turn this into call to Oraclize
         //verify with modmul - verify (base * result) % m == 1
-        return new_bigint;
+        return new_BigNumber;
      }
      
     
-    function is_even(bigint _in) private returns(uint ret){
+    function is_even(BigNumber _in) internal returns(uint ret){
         assembly{
             let in_ptr := add(mload(_in), mload(mload(_in))) //go to last value
             ret := mod(mload(in_ptr),2)
         }
     }
 
-    function cmp(bigint a, bigint b) private returns(int){
+    function cmp(BigNumber a, BigNumber b) internal returns(int){
         if(a.msb>b.msb) return 1;
         if(b.msb>a.msb) return -1;
 
@@ -469,7 +440,7 @@ contract bigint_functions {
     
 
     //takes in a bytes value and returns the value shifted to the right by 'value' bits.
-    function right_shift(bigint dividend, uint value) private returns(bigint){
+    function right_shift(BigNumber dividend, uint value) internal returns(BigNumber){
         bytes memory val = dividend.val;
         uint word_shifted;
         uint mask_shift = 256-value;
@@ -493,7 +464,7 @@ contract bigint_functions {
     }
 
     //log2Nfor uint - ie. calculates most significant bit of 256 bit value. credit: Harm Campmans @ stackoverflow
-    function get_uint_size(uint b) public returns (uint down){
+    function get_uint_size(uint b) internal returns (uint down){
         uint up = 256;
         down = 0;
         uint attempt = 128;

@@ -1,8 +1,10 @@
 pragma solidity ^0.4.8;
 
-import "./bigint_functions.sol";
+import "./BigNumber.sol";
 
-contract zerocoin is bigint_functions { //inherit all members from bigint
+contract zerocoin { //inherit all members from bigint
+
+    using BigNumber for *;
     /*
      * This smart contract is an implementation of the Zerocoin coin-mixing protocol.
      * paper found here: http://zerocoin.org/media/pdf/ZerocoinOakland.pdf
@@ -20,7 +22,7 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
       */
     address deployment; //address of contract creators. Ability to perform limited changes and for contract deployment. TBD
     bool set = false; //parameters set
-
+ 
     int zkp_iterations = 80;
 
     //accumulator params
@@ -255,6 +257,25 @@ contract zerocoin is bigint_functions { //inherit all members from bigint
         return false;
 
 
+    }
+
+    function bitcoin_sha256(string in_data) public returns (bytes32){
+        //bitcoin hashes inputs twice.
+        //we also hash strings including the length byte (the client hashes strings using std::string from c++, which precedes the string with the length).
+        bytes memory w;
+        
+        uint in_length = in_data.length
+
+         assembly{
+             let m_alloc := msize()
+             w := m_alloc
+             let byte_length := add(mload(in_data),1)
+             mstore(m_alloc, byte_length) // store length in memory
+             calldatacopy(add(m_alloc,0x20), 0x43, byte_length)
+             mstore(0x40,add(m_alloc, add(0x20, div(mload(in_data),0x20)  )) )
+        }
+        
+        return sha256(sha256(w));
     }
 
     function calculate_challenge_commitment_pok(bigint serial_number_commitment, bigint accumulator_commitment, bigint T1, bigint T2) returns (bytes32){
