@@ -241,7 +241,7 @@ contract bigint_functions {
         
         return (c, a_msb);
     }
-        
+
     function bn_mul(bigint a, bigint b) private returns(bigint res){
         // (a * b) = (((a + b)**2 - (a - b)**2) / 4
         // we use modexp contract for squaring of (a # b), passing modulus as 1|0*n, where n = 2 * bit length of (a # b) (and # = +/- depending on call).
@@ -365,6 +365,34 @@ contract bigint_functions {
         }
         
     }
+
+
+    function test_modmul() public returns (bytes){
+        bigint memory a;
+        bigint memory b;
+        bigint memory modulus;
+
+        
+        bytes memory a_val = hex"00000000000000000000000000000000000000000000000000000000000000FF";
+        bytes memory b_val = hex"00000000000000000000000000000000000000000000000000000000000000FE";
+        bytes memory _modulus = hex"000000000000000000000000000000000000000000000000000000000000002F";
+        
+        a.val = a_val;
+        b.val = b_val;
+        modulus.val = _modulus;
+
+        a.neg = false;
+        b.neg = false;
+        modulus.neg = false;
+
+        a.msb = 7;
+        b.msb = 7;
+        modulus.msb = 5;
+
+        bigint memory res = modmul(a,b,modulus);
+        
+        return res.val;
+    }
     
     function modmul(bigint a, bigint b, bigint modulus) private returns(bigint res){
         //calls to modexp with certain values
@@ -377,7 +405,7 @@ contract bigint_functions {
         add_and_modexp = prepare_add(a,b);
         add_and_modexp = prepare_modexp(add_and_modexp, two, modulus);
 
-        sub_and_modexp = prepare_add(a,b);
+        sub_and_modexp = prepare_sub(a,b);
         sub_and_modexp = prepare_modexp(sub_and_modexp, two, modulus);
 
         
@@ -387,10 +415,10 @@ contract bigint_functions {
             
         //Now divide twice by 2 % m.
 
-        if(is_even(res) && (res.msb < modulus.msb)) res = right_shift(res,1); //if, n is even and < modulus, right shift by 1
+        if((is_even(res)==0) && (cmp(res,modulus)==-1)) res = right_shift(res,1); //if, n is even and < modulus, right shift by 1
         else res = right_shift(prepare_add(res,modulus),1); //n is odd. add modulus
 
-        if(is_even(res) && (res.msb < modulus.msb)) res = right_shift(res,1); //if, n is even and < modulus, right shift by 1
+        if((is_even(res)==0) && (cmp(res,modulus)==-1)) res = right_shift(res,1); //if, n is even and < modulus, right shift by 1
         else res = right_shift(prepare_add(res,modulus),1); //n is odd. add modulus
         
     }
@@ -402,9 +430,9 @@ contract bigint_functions {
      }
      
     
-    function is_even(bigint _in) private returns(bool ret){
+    function is_even(bigint _in) private returns(uint ret){
         assembly{
-            let in_ptr := add(_in, sub(mload(_in), 0x20)) //go to last value
+            let in_ptr := add(mload(_in), mload(mload(_in))) //go to last value
             ret := mod(mload(in_ptr),2)
         }
     }
