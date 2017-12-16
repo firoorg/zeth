@@ -1,6 +1,6 @@
 pragma solidity ^0.4.18;
 
-library BigNumber {
+library BigNumberLib {
     /*
      values in memory on the EVM are in 256 bit words - BigNumbers are considered to be consecutive words in big-endian order (top-bottom: word 0 - word n).
      the BigNumber value is in the 'bytes' data structure. by default, this data structure is 'tightly packed', ie. it has no leading zeroes, and it has a 'length' word indicating the number of bytes in the structure.
@@ -47,25 +47,33 @@ library BigNumber {
         BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
         bytes memory val;
         uint msb;
+        int compare;
         if(a.neg || b.neg){
             if(a.neg && b.neg){
                 (val, msb) = bn_add(a.val,b.val,a.msb,b.msb);
                 r.neg = true;
             }
             else {
-                if(a.msb>b.msb){
+                compare = cmp(a,b);
+                if(compare==1){
                     (val, msb) = bn_sub(a.val,b.val,a.msb,b.msb);
                     r.neg = a.neg;
                 }
-                else if(b.msb>a.msb){
-                    (val, msb) = bn_sub(b.val,a.val,a.msb,b.msb);
+                else if(compare==-1){
+                    (val, msb) = bn_sub(b.val,a.val,b.msb,a.msb);
                     r.neg = !a.neg;
                 }
                 else return zero;//one pos and one neg, and same value.
             }
         }
         else{
-            (val, msb) = bn_add(a.val,b.val,a.msb,b.msb);
+            compare = cmp(a,b);
+            if(compare>=0){ //a>=b
+                (val, msb) = bn_add(a.val,b.val,a.msb,b.msb);
+            }
+            else {
+                (val, msb) = bn_add(b.val,a.val,b.msb,a.msb);
+            }
             r.neg = false;
         }
 
@@ -74,9 +82,9 @@ library BigNumber {
     }
 
     //add function. takes two BigNumber values, the msb of the max value, and whether or not the result will be negative.
-    //the values may be of different sizes. sign is handled from the prepare_add function.
+    //the values may be of different sizes, in any order of size, and of different signs: this is handled in the prepare_add function.
     //the function calculates the new msb (basically if msbs are the same, max_msb++) and returns a new BigNumber.
-    function bn_add(bytes a, bytes b, uint a_msb, uint b_msb) internal returns (bytes memory, uint) {
+    function bn_add(bytes a, bytes b, uint a_msb, uint b_msb) private returns (bytes memory, uint) {
 
         uint carry = 0;
         bytes memory c;
@@ -92,15 +100,9 @@ library BigNumber {
             
             for { let i := mload(a) } eq(eq(i,0),0) { i := sub(i, 0x20) } {
                 let max_val := mload(max_ptr)
-                switch lt(i,sub(mload(a),mload(b))) //remainder after min words complete.
+                switch gt(i,sub(mload(a),mload(b))) //remainder after min words complete.
                     case 1{ 
-                        mstore(c_ptr, add(max_val,carry))
-                        
-                        switch and( eq(max,max_val), eq(carry,1) )
-                            case 1  { carry := 1 }
-                            default { carry := 0 }
-                    }
-                    default{  //up to smallest length
+
                         let min_val := mload(min_ptr)
         
                         mstore(c_ptr, add(add(max_val,min_val),carry))
@@ -114,6 +116,13 @@ library BigNumber {
                             }
                             
                         min_ptr := sub(min_ptr,0x20)
+                    }
+                    default{  //after smallest length
+                        mstore(c_ptr, add(max_val,carry))
+                        
+                        switch and( eq(max,max_val), eq(carry,1) )
+                            case 1  { carry := 1 }
+                            default { carry := 0 }
                     }
                 c_ptr := sub(c_ptr,0x20)  
                 max_ptr := sub(max_ptr,0x20)
@@ -148,19 +157,15 @@ library BigNumber {
                 }
                 else if(compare == -1) { 
 
-                    (val,msb) = bn_sub(b.val,a.val,a.msb,b.msb); 
+                    (val,msb) = bn_sub(b.val,a.val,b.msb,a.msb); 
                     r.neg = false;
                 }
                 else return zero;
             }
-            if(a.neg) {
+            else {
                 (val,msb) = bn_add(a.val,b.val,a.msb,b.msb);
-                r.neg = true;
-             }
-            else if(b.neg) {
-                (val,msb) = bn_add(a.val,b.val,a.msb,b.msb);
-                r.neg = false;
-             }
+                r.neg = (a.neg) ? true : false;
+            }
         }
         else {
             compare = cmp(a,b);
@@ -169,7 +174,7 @@ library BigNumber {
                 r.neg = false;
              }
             else if(compare == -1) { 
-                (val,msb) = bn_sub(b.val,a.val,a.msb,b.msb);
+                (val,msb) = bn_sub(b.val,a.val,b.msb,a.msb);
                 r.neg = true;
             }
             else return zero; 
@@ -182,7 +187,7 @@ library BigNumber {
  
 
    //sub function. similar to add above, except we pass the msb of both values (this is needed for msb calculation at the end)
-   function bn_sub(bytes a, bytes b, uint a_msb, uint b_msb) internal returns (bytes memory, uint) {
+   function bn_sub(bytes a, bytes b, uint a_msb, uint b_msb) private returns (bytes memory, uint) {
         //assuming here that values arrive from prepare_sub as a=max and b=min (or both the same size)
         bytes memory c;
         assembly {
