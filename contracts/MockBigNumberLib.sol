@@ -10,11 +10,11 @@ contract MockBigNumberLib {
 
   //******* bn_add setup **********//
 
-  function mock_bn_add(bytes a_val, bool a_neg, uint a_msb,  bytes b_val, bool b_neg, uint b_msb) public returns (bytes memory n){
+  function mock_bn_add(bytes a_val, bool a_neg, uint a_msb,  bytes b_val, bool b_neg, uint b_msb) public returns (bytes, bool){
     BigNumberLib.BigNumber memory a = BigNumberLib.BigNumber(a_val, a_neg, a_msb);
     BigNumberLib.BigNumber memory b = BigNumberLib.BigNumber(b_val, b_neg, b_msb);
     BigNumberLib.BigNumber memory res = a.prepare_add(b);
 
-    n = res.val;
+    return (res.val,res.neg);
   }
 }

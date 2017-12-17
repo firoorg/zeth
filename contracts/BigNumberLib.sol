@@ -47,10 +47,12 @@ library BigNumberLib {
         BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
         bytes memory val;
         uint msb;
-        int compare;
+        int compare = cmp(a,b);
+
         if(a.neg || b.neg){
             if(a.neg && b.neg){
-                (val, msb) = bn_add(a.val,b.val,a.msb,b.msb);
+                if(compare>=0) (val, msb) = bn_add(a.val,b.val,a.msb,b.msb);
+                else (val, msb) = bn_add(b.val,a.val,b.msb,a.msb);
                 r.neg = true;
             }
             else {
@@ -67,7 +69,6 @@ library BigNumberLib {
             }
         }
         else{
-            compare = cmp(a,b);
             if(compare>=0){ //a>=b
                 (val, msb) = bn_add(a.val,b.val,a.msb,b.msb);
             }

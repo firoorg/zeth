@@ -5,7 +5,7 @@ var bn = require('bn.js')
 var crypto = require("crypto")  
 
 contract('MockBigNumberLib', function(accounts) {
-  for(var runs=100;runs>0;runs--){
+    for(var runs=100;runs>0;runs--){
     it("create random positive input for A and B, add to get C, assert ==  from contract", function() {
       return MockBigNumberLib.deployed().then(function(instance) {
           var a_size = (Math.floor(Math.random() * 10) + 1) * 32
@@ -14,29 +14,34 @@ contract('MockBigNumberLib', function(accounts) {
           var b_size = (Math.floor(Math.random() * 10) + 1) * 32
           var b_val = crypto.randomBytes(b_size).toString('hex'); //create random hex strings
 
-          var a_bn = new bn(a_val, 16);
-          var b_bn = new bn(b_val, 16);
+          var a_neg = Math.random() >= 0.5;
+          var b_neg = Math.random() >= 0.5; //generates a random boolean.  
+
+          var a_bn = new bn((a_neg ? "-" : "") + a_val, 16);
+          var b_bn = new bn((b_neg ? "-" : "") + b_val, 16);
+
           var res_bn = a_bn.add(b_bn);
 
           var a_val_enc = "0x" + a_val
           var b_val_enc = "0x" + b_val
 
-          var a_neg_enc = false;
-          var b_neg_enc = false; //generates a random boolean. 
-
+          expected_result_val = res_bn.toString('hex')
+          if(expected_result_val[0] == '-'){
+            expected_result_neg = true;
+            expected_result_val = expected_result_val.substr(1)
+          }else expected_result_neg = false;
+        
           var a_msb_enc = a_bn.bitLength() - 1
           var b_msb_enc = b_bn.bitLength() - 1
-
-          var expected_result = res_bn.toString('hex')
-
-          expected_result = "0x" + ((expected_result.length  % 64 != 0) ? "0".repeat(64 - (expected_result.length % 64)) : "") + expected_result //add any leading zeroes (not present from BN)
-           
-           
-        instance.mock_bn_add.call(a_val_enc, a_neg_enc, a_msb_enc, b_val_enc, b_neg_enc, b_msb_enc)
-        .then(function(actual_result_a) {
-          assert.equal(expected_result, actual_result_a, "returned value did not match. \na_val:\n" + a_val + "\nb_val:\n" + b_val + "\na_msb:\n" + a_msb_enc + "\nb_msb:\n" + b_msb_enc + "\n");
+          
+          expected_result_val = "0x" + ((expected_result_val.length  % 64 != 0) ? "0".repeat(64 - (expected_result_val.length % 64)) : "") + expected_result_val //add any leading zeroes (not present from BN)
+                     
+        instance.mock_bn_add.call(a_val_enc, a_neg, a_msb_enc, b_val_enc, b_neg, b_msb_enc)
+        .then(function(actual_result) {
+          assert.equal(expected_result_val, actual_result[0], "returned val did not match. \na_val:\n" + a_val + "\nb_val:\n" + b_val + "\na_msb:\n" + a_msb_enc + "\nb_msb:\n" + b_msb_enc + "\na_neg:\n" + a_neg + "\nb_neg:\n" + b_neg );
+          assert.equal(expected_result_neg, actual_result[1], "returned bool did not match. \na_val:\n" + a_val + "\nb_val:\n" + b_val + "\na_msb:\n" + a_msb_enc + "\nb_msb:\n" + b_msb_enc + "\n" + "\na_neg:\n" + a_neg + "\nb_neg:\n" + b_neg + "\n");
       })
       }); 
     });
-  }
+   }
 });
