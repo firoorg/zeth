@@ -51,18 +51,17 @@ library BigNumberLib {
 
         if(a.neg || b.neg){
             if(a.neg && b.neg){
-                if(compare>=0) (val, msb) = bn_add(a.val,b.val,a.msb,b.msb);
-                else (val, msb) = bn_add(b.val,a.val,b.msb,a.msb);
+                if(compare>=0) (val, msb) = bn_add(a.val,b.val,a.msb);
+                else (val, msb) = bn_add(b.val,a.val,b.msb);
                 r.neg = true;
             }
             else {
-                compare = cmp(a,b);
                 if(compare==1){
-                    (val, msb) = bn_sub(a.val,b.val,a.msb,b.msb);
+                    (val, msb) = bn_sub(a.val,b.val);
                     r.neg = a.neg;
                 }
                 else if(compare==-1){
-                    (val, msb) = bn_sub(b.val,a.val,b.msb,a.msb);
+                    (val, msb) = bn_sub(b.val,a.val);
                     r.neg = !a.neg;
                 }
                 else return zero;//one pos and one neg, and same value.
@@ -70,10 +69,10 @@ library BigNumberLib {
         }
         else{
             if(compare>=0){ //a>=b
-                (val, msb) = bn_add(a.val,b.val,a.msb,b.msb);
+                (val, msb) = bn_add(a.val,b.val,a.msb);
             }
             else {
-                (val, msb) = bn_add(b.val,a.val,b.msb,a.msb);
+                (val, msb) = bn_add(b.val,a.val,b.msb);
             }
             r.neg = false;
         }
@@ -85,15 +84,15 @@ library BigNumberLib {
     //add function. takes two BigNumber values, the msb of the max value, and whether or not the result will be negative.
     //the values may be of different sizes, in any order of size, and of different signs: this is handled in the prepare_add function.
     //the function calculates the new msb (basically if msbs are the same, max_msb++) and returns a new BigNumber.
-    function bn_add(bytes a, bytes b, uint a_msb, uint b_msb) private returns (bytes memory, uint) {
-
-        uint carry = 0;
+    function bn_add(bytes a, bytes b, uint a_msb) private returns (bytes memory, uint) {
         bytes memory c;
         assembly {
 
             let c_start := msize() // Get the highest available block of memory
             
             let max := sub(0,1)
+
+            let carry := 0
 
             let max_ptr := add(a, mload(a))
             let min_ptr := add(b, mload(b)) //go to end of arrays
@@ -141,7 +140,11 @@ library BigNumberLib {
             mstore(0x40, add(c,c_bytes)) // Update the msize offset to be our memory reference plus the amount of bytes we're using
         }
         
-        return (c, (a_msb==b_msb) ? ++a_msb : a_msb);
+        uint res;
+        assembly {res := mload(add(c,0x20))}
+        if(res>>((a_msb+1) % 256)==1) ++a_msb;
+        
+        return (c, a_msb);
     }
 
     function prepare_sub(BigNumber a, BigNumber b) internal returns(BigNumber r) {
@@ -153,29 +156,29 @@ library BigNumberLib {
             if(a.neg && b.neg){
                 compare = cmp(a,b);
                 if(compare == 1) { 
-                    (val,msb) = bn_sub(a.val,b.val,a.msb,b.msb); 
+                    (val,msb) = bn_sub(a.val,b.val); 
                     r.neg = true;
                 }
                 else if(compare == -1) { 
 
-                    (val,msb) = bn_sub(b.val,a.val,b.msb,a.msb); 
+                    (val,msb) = bn_sub(b.val,a.val); 
                     r.neg = false;
                 }
                 else return zero;
             }
             else {
-                (val,msb) = bn_add(a.val,b.val,a.msb,b.msb);
+                (val,msb) = bn_add(a.val,b.val,a.msb);
                 r.neg = (a.neg) ? true : false;
             }
         }
         else {
             compare = cmp(a,b);
             if(compare == 1) {
-                (val,msb) = bn_sub(a.val,b.val,a.msb,b.msb);
+                (val,msb) = bn_sub(a.val,b.val);
                 r.neg = false;
              }
             else if(compare == -1) { 
-                (val,msb) = bn_sub(b.val,a.val,b.msb,a.msb);
+                (val,msb) = bn_sub(b.val,a.val);
                 r.neg = true;
             }
             else return zero; 
@@ -188,14 +191,14 @@ library BigNumberLib {
  
 
    //sub function. similar to add above, except we pass the msb of both values (this is needed for msb calculation at the end)
-   function bn_sub(bytes a, bytes b, uint a_msb, uint b_msb) private returns (bytes memory, uint) {
+   function bn_sub(bytes a, bytes b) private returns (bytes memory, uint) {
         //assuming here that values arrive from prepare_sub as a=max and b=min (or both the same size)
         bytes memory c;
+        uint carry = 0;
         assembly {
                 
             let c_start := msize() // Get the highest available block of memory
         
-            let carry := 0
             let uint_max := sub(0,1) //max size of uint (underflows: 0-1 = 2^256 - 1)
             let a_len := mload(a)
             let b_len := mload(b)
@@ -208,24 +211,26 @@ library BigNumberLib {
             
             for { let i := a_len } eq(eq(i,0),0) { i := sub(i, 0x20) } {
                 let a_val := mload(a_ptr)
-                switch lt(i,len_diff) //remainder after min words complete.
+                switch gt(i,len_diff) //remainder after min words complete.
                     case 1{ 
-                        mstore(c_ptr, sub(a_val,carry))
-                        
-                        switch and( eq(a_val,0), eq(carry,1) )
-                            case 1  { carry := 1 }
-                            default { carry := 0 }
-                    }
-                    default{  //up to smallest length
                         let b_val := mload(b_ptr)
         
-                        mstore(c_ptr, sub(a_val,sub(b_val,carry)))
+                        mstore(c_ptr, sub(sub(a_val,b_val),carry))
                     
                         switch or(lt(a_val, add(b_val,carry)), and(eq(b_val,uint_max), eq(carry,1)))
                             case 1  { carry := 1 }
                             default { carry := 0 }
                             
                         b_ptr := sub(b_ptr,0x20)
+                    }
+                    default{  //up to smallest length
+
+                        mstore(c_ptr, sub(a_val,carry))
+                    
+                        switch and( eq(a_val,0), eq(carry,1) )
+                            case 1  { carry := 1 }
+                            default { carry := 0 }
+
                     }
                 c_ptr := sub(c_ptr,0x20)  
                 a_ptr := sub(a_ptr,0x20)
@@ -238,13 +243,11 @@ library BigNumberLib {
             mstore(0x40, add(c,add(0x20, a_len))) // Update the msize offset to be our memory reference plus the amount of bytes we're using
         }
 
-        if(a_msb==b_msb){
-            uint uint_size;
-            assembly{ uint_size := mload(add(c,0x20))} 
-            a_msb = get_uint_size(uint_size) + ((c.length-32)*8);
-        }
+        uint uint_size;
+        assembly{ uint_size := mload(add(c,0x20))} 
+        uint new_msb = get_uint_size(uint_size)-1 + ((c.length-32)*8);
         
-        return (c, a_msb);
+        return (c, new_msb);
     }
 
     function bn_mul(BigNumber a, BigNumber b) internal returns(BigNumber res){
@@ -469,24 +472,35 @@ library BigNumberLib {
         return dividend;
     }
 
-    //log2Nfor uint - ie. calculates most significant bit of 256 bit value. credit: Harm Campmans @ stackoverflow
-    function get_uint_size(uint b) internal returns (uint down){
-        uint up = 256;
-        down = 0;
-        uint attempt = 128;
-        while (up>down+4){
-            if(b>=(2**attempt)){
-                down=attempt;
-            }else{
-                up=attempt;
-            }
-            attempt=(up+down)/2;
-        }
-        uint temp = 2**down;
-        while(temp<=b){
-            down++;
-            temp=temp*2;
-        }
-        return down-1; //sub to return index.
+    //log2Nfor uint - ie. calculates most significant bit of 256 bit value. credit: Tjaden Hess @ ethereum.stackexchange
+  function get_uint_size(uint x) internal returns (uint y){
+       assembly {
+            let arg := x
+            x := sub(x,1)
+            x := or(x, div(x, 0x02))
+            x := or(x, div(x, 0x04))
+            x := or(x, div(x, 0x10))
+            x := or(x, div(x, 0x100))
+            x := or(x, div(x, 0x10000))
+            x := or(x, div(x, 0x100000000))
+            x := or(x, div(x, 0x10000000000000000))
+            x := or(x, div(x, 0x100000000000000000000000000000000))
+            x := add(x, 1)
+            let m := mload(0x40)
+            mstore(m,           0xf8f9cbfae6cc78fbefe7cdc3a1793dfcf4f0e8bbd8cec470b6a28a7a5a3e1efd)
+            mstore(add(m,0x20), 0xf5ecf1b3e9debc68e1d9cfabc5997135bfb7a7a3938b7b606b5b4b3f2f1f0ffe)
+            mstore(add(m,0x40), 0xf6e4ed9ff2d6b458eadcdf97bd91692de2d4da8fd2d0ac50c6ae9a8272523616)
+            mstore(add(m,0x60), 0xc8c0b887b0a8a4489c948c7f847c6125746c645c544c444038302820181008ff)
+            mstore(add(m,0x80), 0xf7cae577eec2a03cf3bad76fb589591debb2dd67e0aa9834bea6925f6a4a2e0e)
+            mstore(add(m,0xa0), 0xe39ed557db96902cd38ed14fad815115c786af479b7e83247363534337271707)
+            mstore(add(m,0xc0), 0xc976c13bb96e881cb166a933a55e490d9d56952b8d4e801485467d2362422606)
+            mstore(add(m,0xe0), 0x753a6d1b65325d0c552a4d1345224105391a310b29122104190a110309020100)
+            mstore(0x40, add(m, 0x100))
+            let magic := 0x818283848586878898a8b8c8d8e8f929395969799a9b9d9e9faaeb6bedeeff
+            let shift := 0x100000000000000000000000000000000000000000000000000000000000000
+            let a := div(mul(x, magic), shift)
+            y := div(mload(add(m,sub(255,a))), shift)
+            y := add(y, mul(256, gt(arg, 0x8000000000000000000000000000000000000000000000000000000000000000)))
+        }  
     }
 }
