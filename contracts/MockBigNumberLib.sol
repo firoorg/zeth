@@ -25,4 +25,12 @@ contract MockBigNumberLib {
 
     return (res.val, res.neg, res.msb);
   }
+
+  function mock_bn_sub(bytes a_val, bool a_neg, uint a_msb,  bytes b_val, bool b_neg, uint b_msb) public returns (bytes, bool, uint){
+    BigNumberLib.BigNumber memory a = BigNumberLib.BigNumber(a_val, a_neg, a_msb);
+    BigNumberLib.BigNumber memory b = BigNumberLib.BigNumber(b_val, b_neg, b_msb);
+    BigNumberLib.BigNumber memory res = a.prepare_sub(b);
+
+    return (res.val, res.neg, res.msb);
+  }
 }

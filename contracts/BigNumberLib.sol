@@ -152,9 +152,9 @@ library BigNumberLib {
         bytes memory val;
         int compare;
         uint msb;
+        compare = cmp(a,b);
         if(a.neg || b.neg) {
-            if(a.neg && b.neg){
-                compare = cmp(a,b);
+            if(a.neg && b.neg){           
                 if(compare == 1) { 
                     (val,msb) = bn_sub(a.val,b.val); 
                     r.neg = true;
@@ -167,12 +167,13 @@ library BigNumberLib {
                 else return zero;
             }
             else {
-                (val,msb) = bn_add(a.val,b.val,a.msb);
+                if(compare >= 0) (val,msb) = bn_add(a.val,b.val,a.msb);
+                else (val,msb) = bn_add(b.val,a.val,b.msb);
+                
                 r.neg = (a.neg) ? true : false;
             }
         }
         else {
-            compare = cmp(a,b);
             if(compare == 1) {
                 (val,msb) = bn_sub(a.val,b.val);
                 r.neg = false;
