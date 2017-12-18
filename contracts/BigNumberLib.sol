@@ -326,7 +326,7 @@ library BigNumberLib {
     
     // Wrapper for built-in BigNumber_modexp (contract 0x5) as described here. https://github.com/ethereum/EIPs/pull/198
     //this function takes in bytes values and returns a tightly packed byte array. we then convert this into our scheme
-    function modexp(bytes memory _base, bytes memory _exp, bytes memory _mod) internal view returns(bytes memory ret) {
+    function modexp(bytes memory _base, bytes memory _exp, bytes memory _mod) private view returns(bytes memory ret) {
         
 
         assembly {
