@@ -32,7 +32,7 @@ library BigNumberLib {
      the sign of the value is controlled artificially, as is the case with other big integer libraries. at present the msb is tracked throughout the lifespan of the BigNumber instance.
 
      when the caller creates a BigNumber in the zerocoin contract, they also indicate the most significant bit of the value. this is verified in the contract by right shifting the most significant word by the passed value mod 256, and verifying the result is equal to 1. 
-     the value itself, therefore, is the overall msb of the BigNumber value. ie. of the value is 512 bits long, and msb is 2nd highest bit from the end, the msb in the struct = 510 (necessary for cmp).
+     the value itself, therefore, is the overall msb of the BigNumber value. 
     */
 
     struct BigNumber { 
@@ -140,9 +140,12 @@ library BigNumberLib {
             mstore(0x40, add(c,c_bytes)) // Update the msize offset to be our memory reference plus the amount of bytes we're using
         }
         
-        uint res;
-        assembly {res := mload(add(c,0x20))}
-        if(res>>((a_msb+1) % 256)==1) ++a_msb;
+        //we now calc the new msb.
+        //with addition, if we assume that a is at least equal to b, the the resulting msb will be a_msb or ++a_msb.
+        //we check for that here
+        uint res; 
+        assembly {res := mload(add(c,0x20))} //get msword of result
+        if(res>>(a_msb % 256)==1) ++a_msb; //if msword >> a_msb (mod 256 to get word shift), new msb is ++a_msb. 
         
         return (c, a_msb);
     }
@@ -246,7 +249,7 @@ library BigNumberLib {
 
         uint uint_size;
         assembly{ uint_size := mload(add(c,0x20))} 
-        uint new_msb = get_uint_size(uint_size)-1 + ((c.length-32)*8);
+        uint new_msb = get_uint_size(uint_size) + ((c.length-32)*8);
         
         return (c, new_msb);
     }
@@ -261,7 +264,7 @@ library BigNumberLib {
         BigNumber memory modulus;
         
         bytes memory two_val = hex"0000000000000000000000000000000000000000000000000000000000000002";
-        BigNumber memory two = BigNumber(two_val,false,1);        
+        BigNumber memory two = BigNumber(two_val,false,2);        
         
         uint mod_index;
         uint val;
@@ -297,8 +300,6 @@ library BigNumberLib {
         
         res = prepare_sub(add_and_modexp,sub_and_modexp);
         res = right_shift(res, 2); // LHS - RHS / 4
-
-        //res = sub_and_modexp;
         
      }
     
@@ -381,7 +382,7 @@ library BigNumberLib {
         BigNumber memory add_and_modexp;
         BigNumber memory sub_and_modexp;
         
-        BigNumber memory two = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000002",false,1); 
+        BigNumber memory two = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000002",false,2); 
 
         add_and_modexp = prepare_add(a,b);
         add_and_modexp = prepare_modexp(add_and_modexp, two, modulus);
