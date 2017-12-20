@@ -1,10 +1,10 @@
 pragma solidity ^0.4.8;
 
-import "./BigNumber.sol";
+import "contracts/BigNumberLib.sol";
 
 contract zerocoin { 
 
-    using BigNumber for *;
+    using BigNumberLib for *;
     /*
      * This smart contract is an implementation of the Zerocoin coin-mixing protocol.
      * paper found here: http://zerocoin.org/media/pdf/ZerocoinOakland.pdf
@@ -18,7 +18,7 @@ contract zerocoin {
       * value used for parameter generation in Zcoin.
       * This can be verified by using the paramgen tool in the libzerocoin lib by building project 
       * @ https://github.com/zcoinofficial/zcoin/tree/master/src/libzerocoin.
-      * struct and bigint values will be generated in this contract's constructor by the Zcoin team.
+      * struct and BigNumberLib.BigNumber values will be generated in this contract's constructor by the Zcoin team.
       */
     address deployment; //address of contract creators. Ability to perform limited changes and for contract deployment. TBD
     bool set = false; //parameters set
@@ -36,24 +36,24 @@ contract zerocoin {
     //      max(serial_number_sok_commitment_group.group_order.bit_size(), accumulator_pok_commitment_group.group_order.bit_size())));
     uint commitment_pok_max_size;
 
-    bigint commitment_pok_challenge_size; // 2^COMMITMENT_EQUALITY_CHALLENGE_SIZE(==256) - 1
+    BigNumberLib.BigNumber commitment_pok_challenge_size; // 2^COMMITMENT_EQUALITY_CHALLENGE_SIZE(==256) - 1
 
     //greatest and smallest values for coin
-    bigint min_coin_value;
-    bigint max_coin_value;
+    BigNumberLib.BigNumber min_coin_value;
+    BigNumberLib.BigNumber max_coin_value;
 
     bytes challenge_commitment_base; //hash of challenge commitment identification string and parameters
 
 
     //for hash function in serial number SoK verification
-    bigint params_bytes;
+    BigNumberLib.BigNumber params_bytes;
 
     //RSA-2048 Factoring Challenge encoded as bytes.
-    bigint modulus; //RSA-2048
+    BigNumberLib.BigNumber modulus; //RSA-2048
 
     //the following value is used in the accumulator verification and is equal to:
-    //maxCoinValue * bigint(2).pow(k_prime + k_dprime + 1))
-    bigint upper_result_range_value;
+    //maxCoinValue * BigNumberLib.BigNumber(2).pow(k_prime + k_dprime + 1))
+    BigNumberLib.BigNumber upper_result_range_value;
     
     _accumulator_pok_commitment_group accumulator_pok_commitment_group;
     _accumulator_qrn_commitment_group accumulator_qrn_commitment_group;
@@ -62,29 +62,29 @@ contract zerocoin {
 
     //these structs will be assigned in contract contructor.
     struct _accumulator_pok_commitment_group{
-        bigint g;
-        bigint h;
-        bigint modulus;
-        bigint group_order;
+        BigNumberLib.BigNumber g;
+        BigNumberLib.BigNumber h;
+        BigNumberLib.BigNumber modulus;
+        BigNumberLib.BigNumber group_order;
     }
 
     struct _accumulator_qrn_commitment_group{
-        bigint g;
-        bigint h;
+        BigNumberLib.BigNumber g;
+        BigNumberLib.BigNumber h;
     }
 
     struct _coin_commitment_group{
-        bigint g;
-        bigint h;
-        bigint modulus;
-        bigint group_order;
+        BigNumberLib.BigNumber g;
+        BigNumberLib.BigNumber h;
+        BigNumberLib.BigNumber modulus;
+        BigNumberLib.BigNumber group_order;
     }
 
     struct _serial_number_sok_commitment_group{
-        bigint g;
-        bigint h;
-        bigint modulus;
-        bigint group_order;
+        BigNumberLib.BigNumber g;
+        BigNumberLib.BigNumber h;
+        BigNumberLib.BigNumber modulus;
+        BigNumberLib.BigNumber group_order;
     }
     //*************************************** End Parameters ********************************************
 
@@ -102,12 +102,12 @@ contract zerocoin {
     //both maps and dynamic arrays are used.
     //maps give constant access time where needed, but are not easily iterable, and so we use lists for storage.
 
-    mapping(bytes32 => bigint) public serial_numbers; //revealed serial numbers, mapped by SHA256 hash
-    mapping(bytes32 => bigint) public commitments; //minted commitments, mapped by SHA256 hash
-    mapping(bytes32 => bigint) public accumulators; //iteratively computed accumulators, mapped by SHA256 hash
+    mapping(bytes32 => BigNumberLib.BigNumber) public serial_numbers; //revealed serial numbers, mapped by SHA256 hash
+    mapping(bytes32 => BigNumberLib.BigNumber) public commitments; //minted commitments, mapped by SHA256 hash
+    mapping(bytes32 => BigNumberLib.BigNumber) public accumulators; //iteratively computed accumulators, mapped by SHA256 hash
 
-    bigint[] accumulator_list;
-    bigint[] commitment_list; // accumulator_n^ commitment_n = accumulator_n+1
+    BigNumberLib.BigNumber[] accumulator_list;
+    BigNumberLib.BigNumber[] commitment_list; // accumulator_n^ commitment_n = accumulator_n+1
     
     //*************************************** Begin Persistent Data Structures **********************************
 
@@ -119,36 +119,36 @@ contract zerocoin {
     // to the public coin (C), each under a different set of public parameters.
     // the ZK proof takes these values as parameters and verifies that the two commitments contain the same public coin.
     struct _commitment_pok {
-        bigint S1;
-        bigint S2;
-        bigint S3;
-        bigint challenge;
+        BigNumberLib.BigNumber S1;
+        BigNumberLib.BigNumber S2;
+        BigNumberLib.BigNumber S3;
+        BigNumberLib.BigNumber challenge;
     }
 
     // Proves that the committed public coin is in the Accumulator (PoK of "witness")
     struct _accumulator_pok {
-        bigint C_e;
-        bigint C_u;
-        bigint C_r;
-        bigint[3] st;
-        bigint[4] t;
-        bigint s_alpha;
-        bigint s_beta;
-        bigint s_zeta;
-        bigint s_sigma;
-        bigint s_eta;
-        bigint s_epsilon;
-        bigint s_delta;
-        bigint s_xi;
-        bigint s_phi;
-        bigint s_gamma;
-        bigint s_psi;
+        BigNumberLib.BigNumber C_e;
+        BigNumberLib.BigNumber C_u;
+        BigNumberLib.BigNumber C_r;
+        BigNumberLib.BigNumber[3] st;
+        BigNumberLib.BigNumber[4] t;
+        BigNumberLib.BigNumber s_alpha;
+        BigNumberLib.BigNumber s_beta;
+        BigNumberLib.BigNumber s_zeta;
+        BigNumberLib.BigNumber s_sigma;
+        BigNumberLib.BigNumber s_eta;
+        BigNumberLib.BigNumber s_epsilon;
+        BigNumberLib.BigNumber s_delta;
+        BigNumberLib.BigNumber s_xi;
+        BigNumberLib.BigNumber s_phi;
+        BigNumberLib.BigNumber s_gamma;
+        BigNumberLib.BigNumber s_psi;
     }
 
     // Proves that the coin is correct w.r.t. serial number and hidden coin secret
     struct _serial_number_sok {
-        bigint[80] s_notprime;
-        bigint[80] sprime;
+        BigNumberLib.BigNumber[80] s_notprime;
+        BigNumberLib.BigNumber[80] sprime;
         bytes32 hash;
     }
 
@@ -165,7 +165,7 @@ contract zerocoin {
     
     //********************************* Begin 'Mint' validation ****************************************************
     function validate_coin_mint(bytes _commitment) returns (bool success){
-        bigint commitment; //serialize bytes input as struct object here
+        BigNumberLib.BigNumber commitment; //serialize bytes input as struct object here
 
         assert (cmp(min_coin_value,commitment)==LT) && 
                 cmp(commitment, max_coin_value)==LT) && 
@@ -175,8 +175,8 @@ contract zerocoin {
         //must also check that denomination of eth sent is correct
         
         //add to accumulator. new accumulator = old accumulator ^ serial_number_commitment mod modulus.
-        bigint old_accumulator = accumulator_list[accumulator_list.length-1];
-        bigint accumulator = modexp(old_accumulator, commitment, modulus);
+        BigNumberLib.BigNumber old_accumulator = accumulator_list[accumulator_list.length-1];
+        BigNumberLib.BigNumber accumulator =prepare modexp(old_accumulator, commitment, modulus);
         accumulators[sha256(accumulator)] = accumulator; 
         accumulator_list.push(accumulator); //add to list and map
 
@@ -188,7 +188,7 @@ contract zerocoin {
         return true;
     }
 
-    function is_prime(bigint serial_number_commitment) returns (bool){
+    function is_prime(BigNumberLib.BigNumber serial_number_commitment) returns (bool){
         //executes Miller-Rabin Primality Test for input.
 
     }
@@ -219,7 +219,7 @@ contract zerocoin {
         }
     }
 
-    function verify_commitment_pok(_commitment_pok commitment_pok, bigint serial_number_commitment, bigint accumulator_commitment) private returns (bool result){
+    function verify_commitment_pok(_commitment_pok commitment_pok, BigNumberLib.BigNumber serial_number_commitment, BigNumberLib.BigNumber accumulator_commitment) private returns (bool result){
         // Compute the maximum range of S1, S2, S3 and verify that the given values are in a correct range.
 
         //get bit sizes of each of the arguments.
@@ -234,17 +234,17 @@ contract zerocoin {
             
 
         // Compute T1 = g1^S1 * h1^S2 * inverse(A^{challenge}) mod p1
-        bigint T1 = _modexp(serial_number_commitment, challenge, serial_number_sok_commitment_group.modulus);
+        BigNumberLib.BigNumber T1 = prepare_modexp(serial_number_commitment, challenge, serial_number_sok_commitment_group.modulus);
         T1 = inverse(T1, serial_number_sok_commitment_group.modulus);
         T1 = modmul(T1, 
-                    modmul(_modexp(serial_number_sok_commitment_group.g, S1, serial_number_sok_commitment_group.modulus), _modexp(serial_number_sok_commitment_group.h, S2, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus),
+                    modmul(prepare_modexp(serial_number_sok_commitment_group.g, S1, serial_number_sok_commitment_group.modulus), prepare_modexp(serial_number_sok_commitment_group.h, S2, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus),
                     serial_number_sok_commitment_group.modulus);
 
         // Compute T2 = g2^S1 * h2^S3 * inverse(B^{challenge}) mod p2
-        bigint T2 = _modexp(accumulator_commitment, challenge, accumulator_pok_commitment_group.modulus);
+        BigNumberLib.BigNumber T2 = prepare_modexp(accumulator_commitment, challenge, accumulator_pok_commitment_group.modulus);
         T2 = inverse(T2, accumulator_pok_commitment_group.modulus);
         T2 = modmul(T2,
-                    modmul(_modexp( accumulator_pok_commitment_group.g, S1,  accumulator_pok_commitment_group.modulus), _modexp( accumulator_pok_commitment_group.h, S3,  accumulator_pok_commitment_group.modulus),  accumulator_pok_commitment_group.modulus),
+                    modmul(prepare_modexp( accumulator_pok_commitment_group.g, S1,  accumulator_pok_commitment_group.modulus), prepare_modexp( accumulator_pok_commitment_group.h, S3,  accumulator_pok_commitment_group.modulus),  accumulator_pok_commitment_group.modulus),
                     accumulator_pok_commitment_group.modulus);
 
         // Hash T1 and T2 along with all of the public parameters
@@ -262,9 +262,10 @@ contract zerocoin {
     function bitcoin_sha256(string in_data) public returns (bytes32){
         //bitcoin hashes inputs twice.
         //we also hash strings including the length byte (the client hashes strings using std::string from c++, which precedes the string with the length).
+        //this may change if we decide to use keccak on the client-side, which we probably will if security is the same.
         bytes memory w;
         
-        uint in_length = in_data.length
+        uint in_length = in_data.length;
 
          assembly{
              let m_alloc := msize()
@@ -278,7 +279,7 @@ contract zerocoin {
         return sha256(sha256(w));
     }
 
-    function calculate_challenge_commitment_pok(bigint serial_number_commitment, bigint accumulator_commitment, bigint T1, bigint T2) returns (bytes32){
+    function calculate_challenge_commitment_pok(BigNumberLib.BigNumber serial_number_commitment, BigNumberLib.BigNumber accumulator_commitment, BigNumberLib.BigNumber T1, BigNumberLib.BigNumber T2) returns (bytes32){
         /* Hash together the following elements:
          * -proof identifier
          * -Commitment A
@@ -292,42 +293,39 @@ contract zerocoin {
          */
 
          bytes hasher = challenge_commitment_base;
-         hasher.push(serial_number_commitment._bytes);
-         hasher.push(accumulator_commitment._bytes);
-         hasher.push(T1._bytes);
-         hasher.push(T2._bytes);
+         //TBD: Assembly implementation
 
          return sha256(hasher);
     }
 
-    function calculate_challenge_serial_number_pok(bigint a_exp, bigint b_exp, bigint h_exp) private returns (bigint){
-        bigint a = coin_commitment_group.g;
-        bigint b = coin_commitment_group.h;
-        bigint g = serial_number_sok_commitment_group.g;
-        bigint h = serial_number_sok_commitment_group.h;
+    function calculate_challenge_serial_number_pok(BigNumberLib.BigNumber a_exp, BigNumberLib.BigNumber b_exp, BigNumberLib.BigNumber h_exp) private returns (BigNumberLib.BigNumber){
+        BigNumberLib.BigNumber a = coin_commitment_group.g;
+        BigNumberLib.BigNumber b = coin_commitment_group.h;
+        BigNumberLib.BigNumber g = serial_number_sok_commitment_group.g;
+        BigNumberLib.BigNumber h = serial_number_sok_commitment_group.h;
 
 
         //both of these operations are modmuls.
-        bigint exponent = modmul(_modexp(a, a_exp, serial_number_sok_commitment_group.group_order), _modexp(b, b_exp, serial_number_sok_commitment_group.group_order), serial_number_sok_commitment_group.group_order);
+        BigNumberLib.BigNumber exponent = modmul(prepare_modexp(a, a_exp, serial_number_sok_commitment_group.group_order), prepare_modexp(b, b_exp, serial_number_sok_commitment_group.group_order), serial_number_sok_commitment_group.group_order);
 
-        return modmul(_modexp(g, exponent, serial_number_sok_commitment_group.modulus), _modexp(h, h_exp, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus);   
+        return modmul(prepare_modexp(g, exponent, serial_number_sok_commitment_group.modulus), prepare_modexp(h, h_exp, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus);   
     }
 
-    function verify_serial_number_sok(_serial_number_sok serial_number_sok, bigint coin_serial_number, bigint serial_number_commitment) private returns (bool result){
+    function verify_serial_number_sok(_serial_number_sok serial_number_sok, BigNumberLib.BigNumber coin_serial_number, BigNumberLib.BigNumber serial_number_commitment) private returns (bool result){
 
         //initially verify that coin_serial_number has not already been used. mapping gives O(1) access
         if((serial_numbers[sha256(coin_serial_number)] == coin_serial_number)) throw;
         
-        bigint a = coin_commitment_group.g;
-        bigint b = coin_commitment_group.h;
-        bigint g = serial_number_sok_commitment_group.g;
-        bigint h = serial_number_sok_commitment_group.h;
+        BigNumberLib.BigNumber a = coin_commitment_group.g;
+        BigNumberLib.BigNumber b = coin_commitment_group.h;
+        BigNumberLib.BigNumber g = serial_number_sok_commitment_group.g;
+        BigNumberLib.BigNumber h = serial_number_sok_commitment_group.h;
 
         bytes hasher;
         //hasher << *params << valueOfCommitmentToCoin <<coinSerialNumber;
         //hash the above into hasher
 
-        bigint[zkp_iterations] tprime;
+        BigNumberLib.BigNumber[zkp_iterations] tprime;
 
         for(uint i = 0; i < zkp_iterations; i++) {
             uint bit = i % 8;
@@ -336,9 +334,9 @@ contract zerocoin {
             if(challenge_bit == 1) {
                 tprime[i] = calculate_challenge_serial_number_pok(coin_serial_number, serial_number_sok.s_notprime[i], serial_number_sok.sprime[i]);
             } else {
-                Bignum exp = _modexp(b, serial_number_sok.s_notprime[i], serial_number_sok_commitment_group.group_order);
-                tprime[i] = modmul(_modexp(_modexp(serial_number_commitment, exp, serial_number_sok_commitment_group.modulus), 1, serial_number_sok_commitment_group.modulus),
-                                    _modexp(_modexp(h, serial_number_sok.sprime[i], serial_number_sok_commitment_group.modulus), 1, serial_number_sok_commitment_group.modulus),
+                Bignum exp = prepare_modexp(b, serial_number_sok.s_notprime[i], serial_number_sok_commitment_group.group_order);
+                tprime[i] = modmul(prepare_modexp(prepare_modexp(serial_number_commitment, exp, serial_number_sok_commitment_group.modulus), 1, serial_number_sok_commitment_group.modulus),
+                                    prepare_modexp(prepare_modexp(h, serial_number_sok.sprime[i], serial_number_sok_commitment_group.modulus), 1, serial_number_sok_commitment_group.modulus),
                                     serial_number_sok_commitment_group.modulus);
             }
         }
@@ -350,62 +348,62 @@ contract zerocoin {
         }
     
     // Verifies that a commitment c is accumulated in accumulator a
-    function verify_accumulator_pok(_accumulator_pok accumulator_pok, bigint accumulator, bigint accumulator_commitment) private returns (bool){
+    function verify_accumulator_pok(_accumulator_pok accumulator_pok, BigNumberLib.BigNumber accumulator, BigNumberLib.BigNumber accumulator_commitment) private returns (bool){
 
         //initially verify that accumulator exists. mapping gives O(1) access
         if(!(accumulators[sha256(accumulator)] == accumulator)) throw;
 
-        bigint sg = accumulator_pok_commitment_group.g;
-        bigint sh = accumulator_pok_commitment_group.h;
+        BigNumberLib.BigNumber sg = accumulator_pok_commitment_group.g;
+        BigNumberLib.BigNumber sh = accumulator_pok_commitment_group.h;
 
-        bigint g_n = accumulator_qrn_commitment_group.g;
-        bigint h_n = accumulator_qrn_commitment_group.h;
+        BigNumberLib.BigNumber g_n = accumulator_qrn_commitment_group.g;
+        BigNumberLib.BigNumber h_n = accumulator_qrn_commitment_group.h;
 
         bytes hasher;
         //hasher << *params << sg << sh << g_n << h_n << accumulator_commitment << accumulator_pok.C_e << accumulator_pok.C_u << accumulator_pok.C_r << accumulator_pok.st[0] << accumulator_pok.st[1] << accumulator_pok.st[2] << accumulator_pok.t[0] << accumulator_pok.t[1] << accumulator_pok.t[2] << accumulator_pok.t[3];
         //hash together inputs above
-        bigint c = bytes_to_bigint(hasher); //this hash should be of length k_prime bits
+        BigNumberLib.BigNumber c = BigNumberLib.BigNumber(hasher); //this hash should be of length k_prime bits
 
-        bigint[3] st_prime;
-        bigint[4] t_prime;
+        BigNumberLib.BigNumber[3] st_prime;
+        BigNumberLib.BigNumber[4] t_prime;
 
-        bigint A,B,C;
+        BigNumberLib.BigNumber A,B,C;
 
-        A = _modexp(accumulator_commitment, c, accumulator_pok_commitment_group.modulus);
-        B = _modexp(sg, accumulator_pok.s_alpha, accumulator_pok_commitment_group.modulus);
-        C = _modexp(sh, accumulator_pok.s_phi, accumulator_pok_commitment_group.modulus);
-        st_prime[0] = _modexp(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus;                        
+        A = prepare_modexp(accumulator_commitment, c, accumulator_pok_commitment_group.modulus);
+        B = prepare_modexp(sg, accumulator_pok.s_alpha, accumulator_pok_commitment_group.modulus);
+        C = prepare_modexp(sh, accumulator_pok.s_phi, accumulator_pok_commitment_group.modulus);
+        st_prime[0] = prepare_modexp(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus;                        
 
-        A = _modexp(sg, c, accumulator_pok_commitment_group.modulus);
-        B = _modexp(mul(accumulator_commitment,inverse(sg,accumulator_pok_commitment_group.modulus)), accumulator_pok.s_gamma, accumulator_pok_commitment_group.modulus);
-        C = _modexp(sh, accumulator_pok.s_psi, accumulator_pok_commitment_group.modulus);
-        st_prime[1] = _modexp(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus;                        
+        A = prepare_modexp(sg, c, accumulator_pok_commitment_group.modulus);
+        B = prepare_modexp(mul(accumulator_commitment,inverse(sg,accumulator_pok_commitment_group.modulus)), accumulator_pok.s_gamma, accumulator_pok_commitment_group.modulus);
+        C = prepare_modexp(sh, accumulator_pok.s_psi, accumulator_pok_commitment_group.modulus);
+        st_prime[1] = prepare_modexp(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus;                        
 
-        A = _modexp(sg, c, accumulator_pok_commitment_group.modulus);
-        B = _modexp(mul(sg,accumulator_commitment),accumulator_pok.s_sigma, accumulator_pok_commitment_group.modulus);
-        C = _modexp(sh, accumulator_pok.s_xi, accumulator_pok_commitment_group.modulus);
-        st_prime[2] = _modexp(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus; 
+        A = prepare_modexp(sg, c, accumulator_pok_commitment_group.modulus);
+        B = prepare_modexp(mul(sg,accumulator_commitment),accumulator_pok.s_sigma, accumulator_pok_commitment_group.modulus);
+        C = prepare_modexp(sh, accumulator_pok.s_xi, accumulator_pok_commitment_group.modulus);
+        st_prime[2] = prepare_modexp(mul(mul(A,B),C), 1, accumulator_pok_commitment_group.modulus; 
 
 
-        A = _modexp(accumulator_pok.C_r, c, modulus);
-        B = _modexp(h_n, accumulator_pok.s_zeta, modulus);
-        C = _modexp(g_n, accumulator_pok.s_epsilon, modulus);
-        t_prime[0] = _modexp(mul(mul(A,B),C), 1, modulus; 
+        A = prepare_modexp(accumulator_pok.C_r, c, modulus);
+        B = prepare_modexp(h_n, accumulator_pok.s_zeta, modulus);
+        C = prepare_modexp(g_n, accumulator_pok.s_epsilon, modulus);
+        t_prime[0] = prepare_modexp(mul(mul(A,B),C), 1, modulus; 
 
-        A = _modexp(accumulator_pok.C_e, c, modulus);
-        B = _modexp(h_n, accumulator_pok.s_eta, modulus);
-        C = _modexp(g_n, accumulator_pok.s_alpha, modulus);
-        t_prime[1] = _modexp(mul(mul(A,B),C), 1, modulus; 
+        A = prepare_modexp(accumulator_pok.C_e, c, modulus);
+        B = prepare_modexp(h_n, accumulator_pok.s_eta, modulus);
+        C = prepare_modexp(g_n, accumulator_pok.s_alpha, modulus);
+        t_prime[1] = prepare_modexp(mul(mul(A,B),C), 1, modulus; 
 
-        A = _modexp(accumulator, c, modulus);
-        B = _modexp(accumulator_pok.C_u, accumulator_pok.s_alpha, modulus);
-        C = _modexp(inverse(h_n, modulus), accumulator_pok.s_beta, modulus);
-        t_prime[2] = _modexp(mul(mul(A,B),C), 1, modulus;
+        A = prepare_modexp(accumulator, c, modulus);
+        B = prepare_modexp(accumulator_pok.C_u, accumulator_pok.s_alpha, modulus);
+        C = prepare_modexp(inverse(h_n, modulus), accumulator_pok.s_beta, modulus);
+        t_prime[2] = prepare_modexp(mul(mul(A,B),C), 1, modulus;
 
-        A = _modexp(accumulator_pok.C_r, accumulator_pok.s_alpha, modulus);
-        B = _modexp(inverse(h_n,modulus),accumulator_pok.s_delta, modulus);
-        C = _modexp(inverse(g_n, modulus),accumulator_pok.s_beta, modulus);
-        t_prime[3] = _modexp(mul(mul(A,B),C), 1, modulus; 
+        A = prepare_modexp(accumulator_pok.C_r, accumulator_pok.s_alpha, modulus);
+        B = prepare_modexp(inverse(h_n,modulus),accumulator_pok.s_delta, modulus);
+        C = prepare_modexp(inverse(g_n, modulus),accumulator_pok.s_beta, modulus);
+        t_prime[3] = prepare_modexp(mul(mul(A,B),C), 1, modulus; 
 
         bool[3] result_st;
         bool[4] result_t;
@@ -419,8 +417,8 @@ contract zerocoin {
         bool result_t[2] = (t[2] == t_prime[2]);
         bool result_t[3] = (t[3] == t_prime[3]);
 
-        //(maxCoinValue * bigint(2).pow(k_prime + k_dprime + 1))) in params as upper_result_range_value
-        bigint lower_result_range_value = upper_result_range_value;
+        //(maxCoinValue * BigNumberLib.BigNumber(2).pow(k_prime + k_dprime + 1))) in params as upper_result_range_value
+        BigNumberLib.BigNumber lower_result_range_value = upper_result_range_value;
         lower_result_range_value.neg = 1;
         bool result_range = (cmp(accumulator_pok.s_alpha, result_range_value) == LT) && (cmp(accumulator_pok.s_alpha, result_range_value) == GT);
 
