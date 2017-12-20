@@ -373,6 +373,8 @@ library BigNumberLib {
             size := add(size,ml)
             // Invoke contract 0x5, put return value right after mod.length, @ +96
             success := call(sub(gas, 1350), 0x5, 0, freemem, size, add(96,freemem), ml)
+
+            switch success case 0 { invalid() } //throw error if call fails
             
             // point to the location of the return value (length, bits)
             //assuming mod length is multiple of 32, return value is already in the right format.
