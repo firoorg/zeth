@@ -238,9 +238,15 @@ library BigNumberLib {
                     }
                 c_ptr := sub(c_ptr,0x20)  
                 a_ptr := sub(a_ptr,0x20)
-            }
-            
-            c := c_start
+            }      
+
+            c_ptr := add(c_ptr,0x20)
+            for { } eq ( eq(mload(c_ptr), 0x0), 1) { } {
+                c_start := add(c_start, 0x20)        //push up the start pointer for the result..
+                a_len := sub(a_len,0x20) //and subtract a word (32 bytes) from the result length.
+            } //this code removes any leading words in the result containing all zeroes.
+
+            c := c_start 
             
             mstore(c,a_len)
             
@@ -258,40 +264,40 @@ library BigNumberLib {
         // (a * b) = (((a + b)**2 - (a - b)**2) / 4
         // we use modexp contract for squaring of (a # b), passing modulus as 1|0*n, where n = 2 * bit length of (a # b) (and # = +/- depending on call).
         // therefore the modulus is the minimum value we can pass that will allow us to do the squaring.
-        
-        BigNumber memory add_and_modexp;
-        BigNumber memory sub_and_modexp;
-        BigNumber memory modulus;
-        
+                
         bytes memory two_val = hex"0000000000000000000000000000000000000000000000000000000000000002";
         BigNumber memory two = BigNumber(two_val,false,2);        
         
-        uint mod_index;
+        uint mod_index = 0;
         uint val;
         bytes memory _modulus;
         
-        add_and_modexp = prepare_add(a,b);
-        mod_index = (++add_and_modexp.msb) * 2;
+        BigNumber memory add_and_modexp = prepare_add(a,b);
+        uint mod_index = add_and_modexp.msb *2 ;
         val = uint(1) << ((mod_index % 256));
         
         _modulus = hex"00";
         assembly {
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
             mstore(add(_modulus,0x20), val)
+            mstore(0x40, add(_modulus, add(mload(_modulus),0x20)))//update freemem pointer to be modulus index + length
         }
+
+        BigNumber memory modulus;
         modulus.val = _modulus;
         modulus.neg = false;
         modulus.msb = mod_index;
         add_and_modexp = prepare_modexp(add_and_modexp,two,modulus);
         
-        sub_and_modexp = prepare_sub(a,b);
-        mod_index = (++sub_and_modexp.msb) * 2;
+        BigNumber memory sub_and_modexp = prepare_sub(a,b);
+        mod_index = sub_and_modexp.msb * 2;
         val = uint(1) << ((mod_index % 256));
         
         _modulus = hex"00";
         assembly {
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
             mstore(add(_modulus,0x20), val)
+            mstore(0x40, add(_modulus, add(mload(_modulus),0x20)))//update freemem pointer to be modulus index + length
         }
         modulus.val = _modulus;
         modulus.neg = false;
@@ -318,8 +324,8 @@ library BigNumberLib {
         bytes memory _result = modexp(base.val,exponent.val,modulus.val);
         //get msb of result (TODO: optimise. we know msb is in the same byte as the modulus msb byte)
         uint msb;
-        assembly { msb := add(_result,0x20)}
-        msb = get_uint_size(msb) + (modulus.val.length /32)-1; 
+        assembly { msb := mload(add(_result,0x20))}
+        msb = get_uint_size(msb) + (((modulus.val.length/32)-1)*256); 
         result.val = _result;
         result.neg = base.neg;
         result.msb = msb;
@@ -361,6 +367,8 @@ library BigNumberLib {
             size := add(size,el)
             success := call(450, 0x4, 0, add(_mod,32), ml, add(freemem,size), ml)
             
+            switch success case 0 { invalid() } //fail where we haven't enough gas to make the call
+
             // Total size of input = 96+base.length+exp.length+mod.length
             size := add(size,ml)
             // Invoke contract 0x5, put return value right after mod.length, @ +96
