@@ -145,7 +145,7 @@ library BigNumberLib {
         //we check for that here
         uint res; 
         assembly {res := mload(add(c,0x20))} //get msword of result
-        if(res>>(a_msb % 256)==1) ++a_msb; //if msword >> a_msb (mod 256 to get word shift), new msb is ++a_msb. 
+        if(res>>(a_msb % 256)==1 || res==1) ++a_msb; //if msword >> a_msb (mod 256 to get word shift),or overflow occured, new msb is ++a_msb. 
         
         return (c, a_msb);
     }
@@ -240,11 +240,12 @@ library BigNumberLib {
                 a_ptr := sub(a_ptr,0x20)
             }      
 
+            //the following code removes any leading words containing all zeroes in the result.
             c_ptr := add(c_ptr,0x20)
-            for { } eq ( eq(mload(c_ptr), 0x0), 1) { } {
-                c_start := add(c_start, 0x20)        //push up the start pointer for the result..
-                a_len := sub(a_len,0x20) //and subtract a word (32 bytes) from the result length.
-            } //this code removes any leading words in the result containing all zeroes.
+            for { } eq ( eq(mload(c_ptr), 0), 1) { c_ptr := add(c_ptr,0x20) } {
+               c_start := add(c_start, 0x20)        //push up the start pointer for the result..
+               a_len := sub(a_len,0x20) //and subtract a word (32 bytes) from the result length.
+            } 
 
             c := c_start 
             
@@ -273,7 +274,8 @@ library BigNumberLib {
         bytes memory _modulus;
         
         BigNumber memory add_and_modexp = prepare_add(a,b);
-        uint mod_index = add_and_modexp.msb *2 ;
+        uint add_and_modexp_msb = add_and_modexp.msb;
+        assembly { mod_index := mul(add_and_modexp_msb,2) }
         val = uint(1) << ((mod_index % 256));
         
         _modulus = hex"00";
@@ -290,7 +292,8 @@ library BigNumberLib {
         add_and_modexp = prepare_modexp(add_and_modexp,two,modulus);
         
         BigNumber memory sub_and_modexp = prepare_sub(a,b);
-        mod_index = sub_and_modexp.msb * 2;
+        uint sub_and_modexp_msb = sub_and_modexp.msb;
+        assembly {mod_index := mul(sub_and_modexp_msb,2)}
         val = uint(1) << ((mod_index % 256));
         
         _modulus = hex"00";
@@ -327,7 +330,7 @@ library BigNumberLib {
         assembly { msb := mload(add(_result,0x20))}
         msb = get_uint_size(msb) + (((modulus.val.length/32)-1)*256); 
         result.val = _result;
-        result.neg = base.neg;
+        result.neg = (base.neg==false || base.neg && is_even(exponent)==0) ? false : true;
         result.msb = msb;
         return result;
      }
@@ -373,8 +376,6 @@ library BigNumberLib {
             size := add(size,ml)
             // Invoke contract 0x5, put return value right after mod.length, @ +96
             success := call(sub(gas, 1350), 0x5, 0, freemem, size, add(96,freemem), ml)
-
-            switch success case 0 { invalid() } //throw error if call fails
             
             // point to the location of the return value (length, bits)
             //assuming mod length is multiple of 32, return value is already in the right format.
@@ -462,21 +463,43 @@ library BigNumberLib {
 
     //takes in a bytes value and returns the value shifted to the right by 'value' bits.
     function right_shift(BigNumber dividend, uint value) internal returns(BigNumber){
-        bytes memory val = dividend.val;
+        bytes memory val;
         uint word_shifted;
         uint mask_shift = 256-value;
         uint mask;
-        assembly { 
-            let val_ptr := add(val, mload(val)) 
+        uint val_ptr;
+        uint max;
+        uint length = dividend.val.length;
+
+        assembly {
+            max := sub(0,32)
+            val_ptr := add(mload(dividend), length) 
             
-            for { let i := sub(div(mload(val),0x20),1) } gt(i,0) { i := sub(i, 1) } {
-                word_shifted := div(mload(val_ptr),exp(2,value)) //right shift by value
-                mask := exp(mul(mload(sub(val_ptr,0x20)),2),mask_shift) //left shift by mask_shift
-                mstore(val_ptr, or(word_shifted,mask))
-                val_ptr := sub(val_ptr,0x20)
+        }
+
+        for(uint i= length-32; i<max;i-=32){
+            assembly{
+                word_shifted := mload(val_ptr)
+                switch eq(i,0)
+                case 1 { mask := 0 }
+                default { mask := mload(sub(val_ptr,0x20)) } //handles msword: no mask needed.
+            }
+            word_shifted >>= value; //right shift current by value
+            mask <<= mask_shift; //left shift next MSWord by mask_shift
+            assembly{ mstore(val_ptr, or(word_shifted,mask)) } //store OR'd mask and shifted value in-place
+            val_ptr-=32;
+        }
+
+        assembly{
+            //the following code removes any leading words in the result containing all zeroes.
+            val_ptr := add(val_ptr,0x20)
+            for { } eq ( eq(mload(val_ptr), 0), 1) { } {
+               val_ptr := add(val_ptr, 0x20) //push up the start pointer for the result..
+               length  := sub(  length,0x20) //and subtract a word (32 bytes) from the result length.
             }
             
-            mstore(val_ptr, div(mload(val_ptr),exp(2,value)))
+            val := sub(val_ptr,0x20)
+            mstore(val, length) 
         }
         
         dividend.val = val;

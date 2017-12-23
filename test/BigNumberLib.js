@@ -64,7 +64,7 @@ contract('MockBigNumberLib', function(accounts) {
       })
   });
   
-  it("Multiplication function: Run 0 - create random inputs for A and B, sub to get C, assert equality from contract", async function() {
+  it("Multiplication function: Run " + (init_runs-run) + " - create random inputs for A and B, sub to get C, assert equality from contract", async function() {
         instance = await MockBigNumberLib.new()
         var a_size = (Math.floor(Math.random() * 10) + 1) * 32
         var a_val = crypto.randomBytes(a_size).toString('hex');
@@ -91,9 +91,9 @@ contract('MockBigNumberLib', function(accounts) {
           expected_result_val = expected_result_val.substr(1)
         }else expected_result_neg = false;
       
-        var a_msb_enc = a_bn.bitLength() - 1
-        var b_msb_enc = b_bn.bitLength() - 1
-        var expected_result_msb = res_bn.bitLength() - 1
+        var a_msb_enc = a_bn.bitLength()
+        var b_msb_enc = b_bn.bitLength()
+        var expected_result_msb = res_bn.bitLength()
         
         expected_result_val = "0x" + ((expected_result_val.length  % 64 != 0) ? "0".repeat(64 - (expected_result_val.length % 64)) : "") + expected_result_val //add any leading zeroes (not present from BN)
 
