@@ -328,7 +328,7 @@ library BigNumberLib {
         //get msb of result (TODO: optimise. we know msb is in the same byte as the modulus msb byte)
         uint msb;
         assembly { msb := mload(add(_result,0x20))}
-        msb = get_uint_size(msb) + (((modulus.val.length/32)-1)*256); 
+        msb = get_uint_size(msb) + (((_result.length/32)-1)*256); 
         result.val = _result;
         result.neg = (base.neg==false || base.neg && is_even(exponent)==0) ? false : true;
         result.msb = msb;
@@ -376,11 +376,24 @@ library BigNumberLib {
             size := add(size,ml)
             // Invoke contract 0x5, put return value right after mod.length, @ +96
             success := call(sub(gas, 1350), 0x5, 0, freemem, size, add(96,freemem), ml)
+
+            let length := ml
+            let length_ptr := add(96,freemem)
+
+            ///the following code removes any leading words containing all zeroes in the result.
+            //start_ptr := add(start_ptr,0x20)
+            for { } eq ( eq(mload(length_ptr), 0), 1) { } {
+               length_ptr := add(length_ptr, 0x20)        //push up the start pointer for the result..
+               length := sub(length,0x20) //and subtract a word (32 bytes) from the result length.
+            } 
+
+            ret := sub(length_ptr,0x20)
+            mstore(ret, length)
             
             // point to the location of the return value (length, bits)
             //assuming mod length is multiple of 32, return value is already in the right format.
             //function visibility is changed to internal to reflect this.
-            ret := add(64,freemem) 
+            //ret := add(64,freemem) 
             
             mstore(0x40, add(add(96, freemem),ml)) //deallocate freemem pointer
         }
@@ -388,32 +401,8 @@ library BigNumberLib {
     }
     
     function modmul(BigNumber a, BigNumber b, BigNumber modulus) internal returns(BigNumber res){
-        //calls to modexp with certain values
-        //(a * b) % m = (((a + b)**2 - (a - b)**2) / 4) % m
-        BigNumber memory add_and_modexp;
-        BigNumber memory sub_and_modexp;
-        
-        BigNumber memory two = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000002",false,2); 
-
-        add_and_modexp = prepare_add(a,b);
-        add_and_modexp = prepare_modexp(add_and_modexp, two, modulus);
-
-        sub_and_modexp = prepare_sub(a,b);
-        sub_and_modexp = prepare_modexp(sub_and_modexp, two, modulus);
-
-        
-        res = prepare_sub(add_and_modexp,sub_and_modexp);
-
-        if(res.neg==true) res = prepare_sub(modulus,res); //underflow. add modulus and n (same result achieved with modulus-(n without sign))
-            
-        //Now divide twice by 2 % m.
-
-        if((is_even(res)==0) && (cmp(res,modulus)==-1)) res = right_shift(res,1); //if, n is even and < modulus, right shift by 1
-        else res = right_shift(prepare_add(res,modulus),1); //n is odd. add modulus
-
-        if((is_even(res)==0) && (cmp(res,modulus)==-1)) res = right_shift(res,1); //if, n is even and < modulus, right shift by 1
-        else res = right_shift(prepare_add(res,modulus),1); //n is odd. add modulus
-        
+        BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
+        res = prepare_modexp(bn_mul(a,b),one,modulus);       
     }
 
     function inverse(BigNumber base, BigNumber modulus) internal returns(BigNumber new_BigNumber){
@@ -507,10 +496,10 @@ library BigNumberLib {
         return dividend;
     }
 
-    //log2Nfor uint - ie. calculates most significant bit of 256 bit value. credit: Tjaden Hess @ ethereum.stackexchange
+//log2Nfor uint - ie. calculates most significant bit of 256 bit value. credit: Tjaden Hess @ ethereum.stackexchange
   function get_uint_size(uint x) internal returns (uint y){
+       uint arg = x;
        assembly {
-            let arg := x
             x := sub(x,1)
             x := or(x, div(x, 0x02))
             x := or(x, div(x, 0x04))
@@ -537,5 +526,6 @@ library BigNumberLib {
             y := div(mload(add(m,sub(255,a))), shift)
             y := add(y, mul(256, gt(arg, 0x8000000000000000000000000000000000000000000000000000000000000000)))
         }  
+        if(arg & arg-1 == 0 && x!=0) ++y; //where x is a power of two, result needs to be incremented. we use the power of two trick here
     }
 }
