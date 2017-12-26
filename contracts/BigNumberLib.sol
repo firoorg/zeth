@@ -44,7 +44,7 @@ library BigNumberLib {
     //in order to do correct addition or subtraction we have to handle the sign.
     //the following two functions takes two BigNumbers, discovers the sign of the result based on the values, and calls the correct operation.
     function prepare_add(BigNumber a, BigNumber b) internal returns(BigNumber r) {
-        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
+        BigNumber memory zero = BigNumber(hex"00",false,0); 
         bytes memory val;
         uint msb;
         int compare = cmp(a,b);
@@ -151,7 +151,7 @@ library BigNumberLib {
     }
 
     function prepare_sub(BigNumber a, BigNumber b) internal returns(BigNumber r) {
-        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
+        BigNumber memory zero = BigNumber(hex"00",false,0); 
         bytes memory val;
         int compare;
         uint msb;
@@ -266,7 +266,7 @@ library BigNumberLib {
         // we use modexp contract for squaring of (a # b), passing modulus as 1|0*n, where n = 2 * bit length of (a # b) (and # = +/- depending on call).
         // therefore the modulus is the minimum value we can pass that will allow us to do the squaring.
                 
-        bytes memory two_val = hex"0000000000000000000000000000000000000000000000000000000000000002";
+        bytes memory two_val = hex"02";
         BigNumber memory two = BigNumber(two_val,false,2);        
         
         uint mod_index = 0;
@@ -401,7 +401,10 @@ library BigNumberLib {
     }
     
     function modmul(BigNumber a, BigNumber b, BigNumber modulus) internal returns(BigNumber res){
-        BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
+        //here we call mul for the two input values, and mod the result with modulus.
+        //sign is taken care of in sub functions
+
+        BigNumber memory one = BigNumber(hex"01",false,1);
         res = prepare_modexp(bn_mul(a,b),one,modulus);       
     }
 
