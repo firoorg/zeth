@@ -2,10 +2,11 @@ pragma solidity ^0.4.18;
 
 library BigNumberLib {
     /*
-     values in memory on the EVM are in 256 bit words - BigNumbers are considered to be consecutive words in big-endian order (top-bottom: word 0 - word n).
-     the BigNumber value is in the 'bytes' data structure. by default, this data structure is 'tightly packed', ie. it has no leading zeroes, and it has a 'length' word indicating the number of bytes in the structure.
-     we consider each BigNumber value to NOT be tightly packed in the bytes data structure, and where the length byte is equal the number of words * 32. 
-     for explanation's sake, imagine that solidity had a 32 bit word width, and the following value (in bytes):
+     values in memory on the EVM are in 256 bit (32 byte) words - BigNumbers are considered to be consecutive words in big-endian order (top-bottom: word 0 - word n).
+     The BigNumber struct consists of the bignumber value, the most significant bit, and the sign of the value.
+     The value is in the Solidity 'bytes' data structure. by default, this data structure is 'tightly packed', ie. it has no leading zeroes, and it has a 'length' word indicating the number of bytes in the structure.
+     we consider each BigNumber value to NOT be tightly packed in the bytes data structure, ie. it has a number of leading zeros such that the value aligns at exactly the size of a number of words.
+     for explanation's sake, imagine that instead the EVM had a 32 bit word width, and the following value (in bytes):
 
      ae1b6b9f1be57476a6948f77effc
 
@@ -16,7 +17,7 @@ library BigNumberLib {
      a6948f77 - word 2
      effc0000 - word 3
 
-     in our scheme, the values are literally shifted to the right by the amount of zero bytes in the final word, and the length is changed to include these bytes.
+     in this scheme, the values are literally shifted to the right by the amount of zero bytes in the final word, and the length is changed to include these bytes.
      our scheme:
 
      00000010 - length (16 - num words * 4, 4 bytes per word)
@@ -25,25 +26,52 @@ library BigNumberLib {
      7476a694 - word 2
      8f77effc - word 3
 
-     our scheme is the same as above with 32 byte words. This is actually how the uint array represents values (bar the length being the number of words as opposed to number of bytes), but the rationale here is that as we are manipulating values in memory anyway, it's unnecessary to use uint[]. 
-     (also, the modexp function expects as parameters, AND returns, bytes, so it saves the conversion either side).
-     why the right shift? this is a kind of 'normalisation'. values will 'line up' with their number representation in memory and so it saves us the hassle of trying to manage the offset when performing operations like add and subtract.
+     this is a kind of 'normalisation'. values will 'line up' with their number representation in memory and so it saves us the hassle of trying to manage the offset when performing operations like add and subtract.
 
-     the sign of the value is controlled artificially, as is the case with other big integer libraries. at present the msb is tracked throughout the lifespan of the BigNumber instance.
+     our scheme is the same as above with 32 byte words. This is actually how the uint array represents values (bar the length being the number of words as opposed to number of bytes).
+     The rationale for this structure is that as we are using assembly to manipulate values directly in memory, a uint array is cumbersome and adds too much unncessary additional overhead.
+     Additionally, the modularion exponentation precompiled contract, used throughout the library, expects as parameters, AND returns, bytes, so it saves the conversion either side.
 
-     when the caller creates a BigNumber in the zerocoin contract, they also indicate the most significant bit of the value. this is verified in the contract by right shifting the most significant word by the passed value mod 256, and verifying the result is equal to 1. 
-     the value itself, therefore, is the overall msb of the BigNumber value. 
+     The sign of the value is controlled artificially, as is the case with other big integer libraries.
+
+     The most significant bit is tracked throughout the lifespan of the BigNumber instance. when the caller creates a BigNumber in the zerocoin contract, they also indicate this value.
+     This is verified in the contract by right shifting the most significant word by the passed value mod 256, and verifying the result is equal to 1. 
     */
-
+    
+    //BigNumber is defined as a Struct.
+    //DO NOT ALLOW INSTANCIATING THIS DIRECTLY - use the init functions defined below.
+    //I'm hoping in future Solidity will allow visibility modifiers on structs..
     struct BigNumber { 
         bytes val;
         bool neg;
         uint msb;
     }
+
+    //create BigNumber methods.
+    //overloading allows caller to obtionally pass msb where it is known - as it is cheaper to do off-chain and verify on-chain. 
+    //we assert input is in data structure as defined above, and that msb, if passed, is correct.
+    function _new(bytes val, bool neg) internal returns(BigNumber r){ 
+        require(val.length % 32 == 0);
+        r.val = val;
+        r.neg = neg;
+        r.msb = get_bit_size(val);
+    }
+
+    function _new(bytes val, bool neg, uint msb) internal returns(BigNumber r){
+        uint val_msword; 
+        assembly {val_msword := mload(add(val,0x20))} //get msword of result
+        require((val.length % 32 == 0) && (val_msword>>(msb%256)==1));
+        r.val = val;
+        r.neg = neg;
+        r.msb = msb;
+    }
     
     //in order to do correct addition or subtraction we have to handle the sign.
     //the following two functions takes two BigNumbers, discovers the sign of the result based on the values, and calls the correct operation.
-    function prepare_add(BigNumber a, BigNumber b) internal returns(BigNumber r) {
+    function prepare_add(BigNumber a, BigNumber b) internal returns(BigNumber) {
+        if(a.msb==0 && b.msb==0) return 0;
+        if(a.msb==0) return b;
+        if(b.msb==0) return a;
         BigNumber memory zero = BigNumber(hex"00",false,0); 
         bytes memory val;
         uint msb;
@@ -266,8 +294,7 @@ library BigNumberLib {
         // we use modexp contract for squaring of (a # b), passing modulus as 1|0*n, where n = 2 * bit length of (a # b) (and # = +/- depending on call).
         // therefore the modulus is the minimum value we can pass that will allow us to do the squaring.
                 
-        bytes memory two_val = hex"02";
-        BigNumber memory two = BigNumber(two_val,false,2);        
+        BigNumber memory two = BigNumber(hex"02",false,2);        
         
         uint mod_index = 0;
         uint val;
@@ -401,7 +428,7 @@ library BigNumberLib {
     }
     
     function modmul(BigNumber a, BigNumber b, BigNumber modulus) internal returns(BigNumber res){
-        //here we call mul for the two input values, and mod the result with modulus.
+        //here we call mul for the two input values, and mod the result with modulus, passing exponent as 1.
         //sign is taken care of in sub functions
 
         BigNumber memory one = BigNumber(hex"01",false,1);
@@ -422,9 +449,16 @@ library BigNumberLib {
         }
     }
 
-    function cmp(BigNumber a, BigNumber b) internal returns(int){
-        if(a.msb>b.msb) return 1;
-        if(b.msb>a.msb) return -1;
+    function struct_cmp(BigNumber a, BigNumber b) internal returns(int){
+        //the function only runs should both values have the same sign.
+        //switch is used to decide this; if both negative, invert result, of both positive, switch has no effect.
+        int switch = 1;
+        if(a.neg && b.neg) switch = -1;
+        else if(a.neg==false && b.neg==true) return 1;
+        else if(a.neg==true && b.neg==false) return -1;
+
+        if(a.msb>b.msb) return 1*switch;
+        if(b.msb>a.msb) return -1*switch;
 
         uint a_ptr;
         uint b_ptr;
@@ -444,8 +478,38 @@ library BigNumberLib {
                 b_word := mload(add(b_ptr,i))
             }
 
-            if(a_word>b_word) return 1;
-            if(b_word>a_word) return -1;
+            if(a_word>b_word) return 1*switch;
+            if(b_word>a_word) return -1*switch;
+
+        }
+
+        return 0; //same value.
+    }
+
+    function cmp(BigNumber a, BigNumber b) internal returns(int){
+        if(a.msb>b.msb) return 1*switch;
+        if(b.msb>a.msb) return -1*switch;
+
+        uint a_ptr;
+        uint b_ptr;
+        uint a_word;
+        uint b_word;
+
+        uint len = a.val.length; //msb is same so no need to check length.
+
+        assembly{
+            a_ptr := add(mload(a),0x20) 
+            b_ptr := add(mload(b),0x20) // 'a' and 'b' store the memory address of 'val' of the struct.
+        }
+
+        for(uint i=0; i<len;i+=32){
+            assembly{
+                a_word := mload(add(a_ptr,i))
+                b_word := mload(add(b_ptr,i))
+            }
+
+            if(a_word>b_word) return 1*switch;
+            if(b_word>a_word) return -1*switch;
 
         }
 
@@ -499,7 +563,14 @@ library BigNumberLib {
         return dividend;
     }
 
-//log2Nfor uint - ie. calculates most significant bit of 256 bit value. credit: Tjaden Hess @ ethereum.stackexchange
+    //get bit size of BigNumber value.
+    function get_bit_size(bytes val) internal returns(uint res){
+        uint val_msword; 
+        assembly {val_msword := mload(add(val,0x20))} //get msword of result
+        res = get_uint_size(val_msword) + (val.length-32)*8;
+    }
+
+  //log2Nfor uint - ie. calculates most significant bit of 256 bit value (one EVM word). credit: Tjaden Hess @ ethereum.stackexchange
   function get_uint_size(uint x) internal returns (uint y){
        uint arg = x;
        assembly {

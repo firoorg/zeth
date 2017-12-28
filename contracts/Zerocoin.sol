@@ -162,7 +162,10 @@ contract zerocoin {
     }
     //***************************************** End Constructor **************************************************
 
-    
+    function get_commitment() {
+        BigNumberLib.BigNumber memory commitment;
+        BigNumberLib.BigNumber memory n = commitments[sha256(commitment)];
+    }
     //********************************* Begin 'Mint' validation ****************************************************
     function validate_coin_mint(bytes _commitment) public returns (bool success){
         BigNumberLib.BigNumber memory commitment; //serialize bytes input as struct object here
@@ -170,7 +173,7 @@ contract zerocoin {
         assert (BigNumberLib.cmp(min_coin_value,commitment)==-1 && 
                 BigNumberLib.cmp(commitment, max_coin_value)==-1 && 
                 is_prime(commitment) &&
-                !(commitments[sha256(commitment)]==commitment));
+                !(sha256(commitments[sha256(commitment)])==sha256(commitment)));
 
         //must also check that denomination of eth sent is correct
         
@@ -180,7 +183,7 @@ contract zerocoin {
         accumulators[sha256(accumulator)] = accumulator; 
         accumulator_list.push(accumulator); //add to list and map
 
-        commitments[sha256(commitment)]==serial_number_commitment;
+        sha256(commitments[sha256(commitment)])==sha256(commitment);
         commitment_list.push(commitment); //add to list and map
 
         // add eth denomination to value pool
@@ -201,12 +204,16 @@ contract zerocoin {
                                bytes serial_number_sok_in, 
                                bytes accumulator,
                                bytes coin_serial_number,
-                               bytes serial_number_commitment,
-                               bytes accumulator_commitment,
+                               bytes _serial_number_commitment,
+                               bytes _accumulator_commitment,
                                bytes output_address) public returns (bool result) { 
 
         //serialize bytes inputs as struct objects.
-
+        _commitment_pok memory commitment_pok;
+        _accumulator_pok memory accumulator_pok;
+        _serial_number_sok memory serial_number_sok;
+        BigNumberLib.BigNumber serial_number_commitment;
+        BigNumberLib.BigNumber accumulator_commitment;
         assert(verify_commitment_pok(commitment_pok, serial_number_commitment, accumulator_commitment) &&
                verify_accumulator_pok(accumulator_pok, accumulator, accumulator_commitment) &&
                verify_serial_number_sok(serial_number_sok, coin_serial_number, serial_number_commitment) &&
@@ -230,25 +237,25 @@ contract zerocoin {
         assert(s1_bit_size < commitment_pok_max_size &&
                s2_bit_size < commitment_pok_max_size &&
                s3_bit_size < commitment_pok_max_size &&
-               (BigNumberLib.cmp(challenge, challenge_size) == -1)); 
+               (BigNumberLib.cmp(commitment_pok.challenge, commitment_pok_challenge_size) == -1)); 
             
 
         // Compute T1 = g1^S1 * h1^S2 * inverse(A^{challenge}) mod p1
-        BigNumberLib.BigNumber memory T1 = BigNumberLib.prepare_modexp(serial_number_commitment, challenge, serial_number_sok_commitment_group.modulus);
+        BigNumberLib.BigNumber memory T1 = BigNumberLib.prepare_modexp(serial_number_commitment, commitment_pok.challenge, serial_number_sok_commitment_group.modulus);
         T1 = BigNumberLib.inverse(T1, serial_number_sok_commitment_group.modulus);
         T1 = BigNumberLib.modmul(T1, 
-                    BigNumberLib.modmul(BigNumberLib.prepare_modexp(serial_number_sok_commitment_group.g, S1, serial_number_sok_commitment_group.modulus), BigNumberLib.prepare_modexp(serial_number_sok_commitment_group.h, S2, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus),
+                    BigNumberLib.modmul(BigNumberLib.prepare_modexp(serial_number_sok_commitment_group.g, commitment_pok.S1, serial_number_sok_commitment_group.modulus), BigNumberLib.prepare_modexp(serial_number_sok_commitment_group.h, commitment_pok.S2, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus),
                     serial_number_sok_commitment_group.modulus);
 
         // Compute T2 = g2^S1 * h2^S3 * BigNumberLib.inverse(B^{challenge}) mod p2
-        BigNumberLib.BigNumber memory T2 = BigNumberLib.prepare_modexp(accumulator_commitment, challenge, accumulator_pok_commitment_group.modulus);
+        BigNumberLib.BigNumber memory T2 = BigNumberLib.prepare_modexp(accumulator_commitment, commitment_pok.challenge, accumulator_pok_commitment_group.modulus);
         T2 = BigNumberLib.inverse(T2, accumulator_pok_commitment_group.modulus);
         T2 = BigNumberLib.modmul(T2,
-                    BigNumberLib.modmul(BigNumberLib.prepare_modexp( accumulator_pok_commitment_group.g, S1,  accumulator_pok_commitment_group.modulus), BigNumberLib.prepare_modexp( accumulator_pok_commitment_group.h, S3,  accumulator_pok_commitment_group.modulus),  accumulator_pok_commitment_group.modulus),
+                    BigNumberLib.modmul(BigNumberLib.prepare_modexp( accumulator_pok_commitment_group.g, commitment_pok.S1,  accumulator_pok_commitment_group.modulus), BigNumberLib.prepare_modexp( accumulator_pok_commitment_group.h, commitment_pok.S3,  accumulator_pok_commitment_group.modulus),  accumulator_pok_commitment_group.modulus),
                     accumulator_pok_commitment_group.modulus);
 
         // Hash T1 and T2 along with all of the public parameters
-        Bignum computed_challenge = calculate_challenge_commitment_pok(serial_number_commitment, accumulator_commitment, T1, T2);
+        BigNumberLib.BigNumber memory computed_challenge = calculate_challenge_commitment_pok(serial_number_commitment, accumulator_commitment, T1, T2);
 
         // Return success if the computed challenge matches the incoming challenge
         if(computed_challenge == commitment_pok.challenge) return true;
@@ -258,7 +265,7 @@ contract zerocoin {
 
     }
 
-    function bitcoin_sha256(string in_data) private returns (bytes32){
+    function bitcoin_sha256(bytes in_data) private returns (bytes32){
         //bitcoin hashes inputs twice.
         //we also hash strings including the length byte (the client hashes strings using std::string from c++, which precedes the string with the length).
         //this may change if we decide to use keccak on the client-side part of zerocoin, which we probably will if security is the same.
@@ -410,19 +417,19 @@ contract zerocoin {
         bool[3] memory result_st;
         bool[4] memory result_t;
 
-        result_st[0] = (st[0] == st_prime[0]);
-        result_st[1] = (st[1] == st_prime[1]);
-        result_st[2] = (st[2] == st_prime[2]);
+        result_st[0] = (accumulator_pok.st[0] == st_prime[0]);
+        result_st[1] = (accumulator_pok.st[1] == st_prime[1]);
+        result_st[2] = (accumulator_pok.st[2] == st_prime[2]);
 
-        result_t[0] = (t[0] == t_prime[0]);
-        result_t[1] = (t[1] == t_prime[1]);
-        result_t[2] = (t[2] == t_prime[2]);
-        result_t[3] = (t[3] == t_prime[3]);
+        result_t[0] = (accumulator_pok.t[0] == t_prime[0]);
+        result_t[1] = (accumulator_pok.t[1] == t_prime[1]);
+        result_t[2] = (accumulator_pok.t[2] == t_prime[2]);
+        result_t[3] = (accumulator_pok.t[3] == t_prime[3]);
 
         //(maxCoinValue * BigNumberLib.BigNumber(2).pow(k_prime + k_dprime + 1))) in params as upper_result_range_value
         BigNumberLib.BigNumber memory lower_result_range_value = upper_result_range_value;
         lower_result_range_value.neg = 1;
-        bool result_range = (BigNumberLib.cmp(accumulator_pok.s_alpha, result_range_value) == -1) && (BigNumberLib.cmp(accumulator_pok.s_alpha, result_range_value) == GT);
+        bool result_range = (BigNumberLib.cmp(accumulator_pok.s_alpha, upper_result_range_value) == -1) && (BigNumberLib.cmp(accumulator_pok.s_alpha, lower_result_range_value) == 1);
 
         return (result_st[0] && result_st[1] && result_st[2] && result_t[0] && result_t[1] && result_t[2] && result_t[3] && result_range);   
     }
