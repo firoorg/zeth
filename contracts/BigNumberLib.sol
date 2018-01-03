@@ -50,29 +50,29 @@ library BigNumberLib {
     //create BigNumber methods.
     //overloading allows caller to obtionally pass msb where it is known - as it is cheaper to do off-chain and verify on-chain. 
     //we assert input is in data structure as defined above, and that msb, if passed, is correct.
-    function _new(bytes val, bool neg) internal returns(BigNumber r){ 
-        require(val.length % 32 == 0);
-        r.val = val;
-        r.neg = neg;
-        r.msb = get_bit_size(val);
-    }
+    // function _new(bytes val, bool neg) internal returns(BigNumber r){ 
+    //     require(val.length % 32 == 0);
+    //     r.val = val;
+    //     r.neg = neg;
+    //     r.msb = get_bit_size(val);
+    // }
 
-    function _new(bytes val, bool neg, uint msb) internal returns(BigNumber r){
-        uint val_msword; 
-        assembly {val_msword := mload(add(val,0x20))} //get msword of result
-        require((val.length % 32 == 0) && (val_msword>>(msb%256)==1));
-        r.val = val;
-        r.neg = neg;
-        r.msb = msb;
-    }
+    // function _new(bytes val, bool neg, uint msb) internal returns(BigNumber r){
+    //     uint val_msword; 
+    //     assembly {val_msword := mload(add(val,0x20))} //get msword of result
+    //     require((val.length % 32 == 0) && (val_msword>>(msb%256)==1));
+    //     r.val = val;
+    //     r.neg = neg;
+    //     r.msb = msb;
+    // }
     
     //in order to do correct addition or subtraction we have to handle the sign.
     //the following two functions takes two BigNumbers, discovers the sign of the result based on the values, and calls the correct operation.
-    function prepare_add(BigNumber a, BigNumber b) internal returns(BigNumber) {
-        if(a.msb==0 && b.msb==0) return 0;
-        if(a.msb==0) return b;
-        if(b.msb==0) return a;
+    function prepare_add(BigNumber a, BigNumber b) internal returns(BigNumber r) {
         BigNumber memory zero = BigNumber(hex"00",false,0); 
+        if(a.msb==0 && b.msb==0) return zero;
+        if(a.msb==0) return b;
+        if(b.msb==0) return a;  
         bytes memory val;
         uint msb;
         int compare = cmp(a,b);
@@ -449,46 +449,46 @@ library BigNumberLib {
         }
     }
 
-    function struct_cmp(BigNumber a, BigNumber b) internal returns(int){
-        //the function only runs should both values have the same sign.
-        //switch is used to decide this; if both negative, invert result, of both positive, switch has no effect.
-        int switch = 1;
-        if(a.neg && b.neg) switch = -1;
-        else if(a.neg==false && b.neg==true) return 1;
-        else if(a.neg==true && b.neg==false) return -1;
+    // function struct_cmp(BigNumber a, BigNumber b) internal returns(int){
+    //     //the function only runs should both values have the same sign.
+    //     //switch is used to decide this; if both negative, invert result, of both positive, switch has no effect.
+    //     int switch = 1;
+    //     if(a.neg && b.neg) switch = -1;
+    //     else if(a.neg==false && b.neg==true) return 1;
+    //     else if(a.neg==true && b.neg==false) return -1;
 
-        if(a.msb>b.msb) return 1*switch;
-        if(b.msb>a.msb) return -1*switch;
+    //     if(a.msb>b.msb) return 1*switch;
+    //     if(b.msb>a.msb) return -1*switch;
 
-        uint a_ptr;
-        uint b_ptr;
-        uint a_word;
-        uint b_word;
+    //     uint a_ptr;
+    //     uint b_ptr;
+    //     uint a_word;
+    //     uint b_word;
 
-        uint len = a.val.length; //msb is same so no need to check length.
+    //     uint len = a.val.length; //msb is same so no need to check length.
 
-        assembly{
-            a_ptr := add(mload(a),0x20) 
-            b_ptr := add(mload(b),0x20) // 'a' and 'b' store the memory address of 'val' of the struct.
-        }
+    //     assembly{
+    //         a_ptr := add(mload(a),0x20) 
+    //         b_ptr := add(mload(b),0x20) // 'a' and 'b' store the memory address of 'val' of the struct.
+    //     }
 
-        for(uint i=0; i<len;i+=32){
-            assembly{
-                a_word := mload(add(a_ptr,i))
-                b_word := mload(add(b_ptr,i))
-            }
+    //     for(uint i=0; i<len;i+=32){
+    //         assembly{
+    //             a_word := mload(add(a_ptr,i))
+    //             b_word := mload(add(b_ptr,i))
+    //         }
 
-            if(a_word>b_word) return 1*switch;
-            if(b_word>a_word) return -1*switch;
+    //         if(a_word>b_word) return 1*switch;
+    //         if(b_word>a_word) return -1*switch;
 
-        }
+    //     }
 
-        return 0; //same value.
-    }
+    //     return 0; //same value.
+    // }
 
     function cmp(BigNumber a, BigNumber b) internal returns(int){
-        if(a.msb>b.msb) return 1*switch;
-        if(b.msb>a.msb) return -1*switch;
+        if(a.msb>b.msb) return 1;
+        if(b.msb>a.msb) return -1;
 
         uint a_ptr;
         uint b_ptr;
@@ -508,8 +508,8 @@ library BigNumberLib {
                 b_word := mload(add(b_ptr,i))
             }
 
-            if(a_word>b_word) return 1*switch;
-            if(b_word>a_word) return -1*switch;
+            if(a_word>b_word) return 1;
+            if(b_word>a_word) return -1;
 
         }
 

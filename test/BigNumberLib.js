@@ -3,6 +3,7 @@ var MockBigNumberLib = artifacts.require("MockBigNumberLib");
 
 var bn = require('bn.js')
 var crypto = require("crypto")  
+var rawtx = require("ethereumjs-tx")  
 
 contract('MockBigNumberLib', function(accounts) {
   init_runs = 30; 

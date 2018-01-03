@@ -162,28 +162,25 @@ contract zerocoin {
     }
     //***************************************** End Constructor **************************************************
 
-    function get_commitment() {
-        BigNumberLib.BigNumber memory commitment;
-        BigNumberLib.BigNumber memory n = commitments[sha256(commitment)];
-    }
     //********************************* Begin 'Mint' validation ****************************************************
-    function validate_coin_mint(bytes _commitment) public returns (bool success){
-        BigNumberLib.BigNumber memory commitment; //serialize bytes input as struct object here
+    function validate_coin_mint(bytes commitment_val, uint commitment_msb) public returns (bool success){
+        //TODO denominations
+        BigNumberLib.BigNumber memory commitment = BigNumberLib._new(commitment_val, false, commitment_msb);
 
         assert (BigNumberLib.cmp(min_coin_value,commitment)==-1 && 
                 BigNumberLib.cmp(commitment, max_coin_value)==-1 && 
                 is_prime(commitment) &&
-                !(sha256(commitments[sha256(commitment)])==sha256(commitment)));
+                !(keccak256(commitments[keccak256(commitment)])==keccak256(commitment)));
 
         //must also check that denomination of eth sent is correct
         
         //add to accumulator. new accumulator = old accumulator ^ serial_number_commitment mod modulus.
         BigNumberLib.BigNumber memory old_accumulator = accumulator_list[accumulator_list.length-1];
         BigNumberLib.BigNumber memory accumulator =BigNumberLib.prepare_modexp(old_accumulator, commitment, modulus);
-        accumulators[sha256(accumulator)] = accumulator; 
+        accumulators[keccak256(accumulator)] = accumulator; 
         accumulator_list.push(accumulator); //add to list and map
 
-        sha256(commitments[sha256(commitment)])==sha256(commitment);
+        commitments[keccak256(commitment)] = commitment;
         commitment_list.push(commitment); //add to list and map
 
         // add eth denomination to value pool
@@ -202,27 +199,32 @@ contract zerocoin {
     function verify_coin_spend(bytes commitment_pok_in, 
                                bytes accumulator_pok_in, 
                                bytes serial_number_sok_in, 
-                               bytes accumulator,
-                               bytes coin_serial_number,
+                               bytes _accumulator,
+                               bytes _coin_serial_number,
                                bytes _serial_number_commitment,
                                bytes _accumulator_commitment,
                                bytes output_address) public returns (bool result) { 
 
-        //serialize bytes inputs as struct objects.
+        //TODO serialize bytes inputs as struct objects defined below using asm   
         _commitment_pok memory commitment_pok;
+        assembly { }
         _accumulator_pok memory accumulator_pok;
         _serial_number_sok memory serial_number_sok;
-        BigNumberLib.BigNumber serial_number_commitment;
-        BigNumberLib.BigNumber accumulator_commitment;
+        BigNumberLib.BigNumber memory accumulator;
+        BigNumberLib.BigNumber memory serial_number_commitment;
+        BigNumberLib.BigNumber memory accumulator_commitment;
+        BigNumberLib.BigNumber memory coin_serial_number;
+
+
         assert(verify_commitment_pok(commitment_pok, serial_number_commitment, accumulator_commitment) &&
                verify_accumulator_pok(accumulator_pok, accumulator, accumulator_commitment) &&
                verify_serial_number_sok(serial_number_sok, coin_serial_number, serial_number_commitment) &&
-               !(serial_numbers[sha256(coin_serial_number)]==coin_serial_number));
+               !( keccak256(serial_numbers[keccak256(coin_serial_number)]) == keccak256(coin_serial_number) ) );
         
         //send denomination of eth from value pool to output_address
 
         //add coin_serial_number to map of used serial numbers
-        serial_numbers[sha256(coin_serial_number)]==coin_serial_number;
+        keccak256(serial_numbers[keccak256(coin_serial_number)])==keccak256(coin_serial_number); //hashing for cheap comparison
     }
     
 
@@ -258,7 +260,7 @@ contract zerocoin {
         BigNumberLib.BigNumber memory computed_challenge = calculate_challenge_commitment_pok(serial_number_commitment, accumulator_commitment, T1, T2);
 
         // Return success if the computed challenge matches the incoming challenge
-        if(computed_challenge == commitment_pok.challenge) return true;
+        if(keccak256(computed_challenge) == keccak256(commitment_pok.challenge)) return true;
 
         // Otherwise return failure
         return false;
@@ -285,7 +287,7 @@ contract zerocoin {
         return sha256(sha256(w));
     }
 
-    function calculate_challenge_commitment_pok(BigNumberLib.BigNumber serial_number_commitment, BigNumberLib.BigNumber accumulator_commitment, BigNumberLib.BigNumber T1, BigNumberLib.BigNumber T2) private returns (bytes32){
+    function calculate_challenge_commitment_pok(BigNumberLib.BigNumber serial_number_commitment, BigNumberLib.BigNumber accumulator_commitment, BigNumberLib.BigNumber T1, BigNumberLib.BigNumber T2) private returns (BigNumberLib.BigNumber){
         /* Hash together the following elements:
          * -proof identifier
          * -Commitment A
@@ -301,7 +303,9 @@ contract zerocoin {
          bytes memory hasher = challenge_commitment_base;
          //TBD: Assembly implementation
 
-         return sha256(hasher);
+         BigNumberLib.BigNumber memory res; //FIXME
+
+         return res;
     }
 
     function calculate_challenge_serial_number_pok(BigNumberLib.BigNumber a_exp, BigNumberLib.BigNumber b_exp, BigNumberLib.BigNumber h_exp) private returns (BigNumberLib.BigNumber){
@@ -320,7 +324,7 @@ contract zerocoin {
     function verify_serial_number_sok(_serial_number_sok serial_number_sok, BigNumberLib.BigNumber coin_serial_number, BigNumberLib.BigNumber serial_number_commitment) private returns (bool result){
 
         //initially verify that coin_serial_number has not already been used. mapping gives O(1) access
-        require(!(serial_numbers[sha256(coin_serial_number)] == coin_serial_number));
+        require(!(keccak256(serial_numbers[keccak256(coin_serial_number)]) == keccak256(coin_serial_number)));
         
         BigNumberLib.BigNumber memory a = coin_commitment_group.g;
         BigNumberLib.BigNumber memory b = coin_commitment_group.h;
@@ -333,22 +337,23 @@ contract zerocoin {
         //hash the above into hasher
 
         BigNumberLib.BigNumber[zkp_iterations] memory tprime;
+        BigNumberLib.BigNumber memory one = BigNumberLib.BigNumber(hex"01",false,1);
 
         for(uint i = 0; i < zkp_iterations; i++) {
             uint bit = i % 8;
             uint _byte = i / 8;
-            uint challenge_bit = ((serial_number_sok.hash[_byte] >> bit) & 0x01);
+            uint challenge_bit;// = ((serial_number_sok.hash[_byte] >> bit) & 0x01); //TODO likely asm implementation
             if(challenge_bit == 1) {
                 tprime[i] = calculate_challenge_serial_number_pok(coin_serial_number, serial_number_sok.s_notprime[i], serial_number_sok.sprime[i]);
             } else {
                 exp = BigNumberLib.prepare_modexp(b, serial_number_sok.s_notprime[i], serial_number_sok_commitment_group.group_order);
-                tprime[i] = BigNumberLib.modmul(BigNumberLib.prepare_modexp(BigNumberLib.prepare_modexp(serial_number_commitment, exp, serial_number_sok_commitment_group.modulus), 1, serial_number_sok_commitment_group.modulus),
-                                    BigNumberLib.prepare_modexp(BigNumberLib.prepare_modexp(h, serial_number_sok.sprime[i], serial_number_sok_commitment_group.modulus), 1, serial_number_sok_commitment_group.modulus),
+                tprime[i] = BigNumberLib.modmul(BigNumberLib.prepare_modexp(BigNumberLib.prepare_modexp(serial_number_commitment, exp, serial_number_sok_commitment_group.modulus), one, serial_number_sok_commitment_group.modulus),
+                                    BigNumberLib.prepare_modexp(BigNumberLib.prepare_modexp(h, serial_number_sok.sprime[i], serial_number_sok_commitment_group.modulus), one, serial_number_sok_commitment_group.modulus),
                                     serial_number_sok_commitment_group.modulus);
             }
         }
         for(i = 0; i < zkp_iterations; i++) {
-            hasher.push(tprime[i]);
+            //hasher.push(tprime[i]); TODO assembly implementation
         }
         return (sha256(hasher) == serial_number_sok.hash);
         
@@ -358,7 +363,7 @@ contract zerocoin {
     function verify_accumulator_pok(_accumulator_pok accumulator_pok, BigNumberLib.BigNumber accumulator, BigNumberLib.BigNumber accumulator_commitment) private returns (bool){
 
         //initially verify that accumulator exists. mapping gives O(1) access
-        require(accumulators[sha256(accumulator)] == accumulator);
+        require(keccak256(accumulators[keccak256(accumulator)]) == keccak256(accumulator));
 
         BigNumberLib.BigNumber memory sg = accumulator_pok_commitment_group.g;
         BigNumberLib.BigNumber memory sh = accumulator_pok_commitment_group.h;
@@ -369,7 +374,7 @@ contract zerocoin {
         bytes memory hasher;
         //hasher << *params << sg << sh << g_n << h_n << accumulator_commitment << accumulator_pok.C_e << accumulator_pok.C_u << accumulator_pok.C_r << accumulator_pok.st[0] << accumulator_pok.st[1] << accumulator_pok.st[2] << accumulator_pok.t[0] << accumulator_pok.t[1] << accumulator_pok.t[2] << accumulator_pok.t[3];
         //hash together inputs above
-        BigNumberLib.BigNumber memory c = BigNumberLib.BigNumber(hasher); //this hash should be of length k_prime bits
+        BigNumberLib.BigNumber memory c;// = BigNumberLib.BigNumber(hasher); //this hash should be of length k_prime bits TODO layout
 
         BigNumberLib.BigNumber[3] memory st_prime;
         BigNumberLib.BigNumber[4] memory t_prime;
@@ -377,58 +382,60 @@ contract zerocoin {
         BigNumberLib.BigNumber memory A;
         BigNumberLib.BigNumber memory B;
         BigNumberLib.BigNumber memory C;
+        
+        BigNumberLib.BigNumber memory one = BigNumberLib.BigNumber(hex"01",false,1);
 
         A = BigNumberLib.prepare_modexp(accumulator_commitment, c, accumulator_pok_commitment_group.modulus);
         B = BigNumberLib.prepare_modexp(sg, accumulator_pok.s_alpha, accumulator_pok_commitment_group.modulus);
         C = BigNumberLib.prepare_modexp(sh, accumulator_pok.s_phi, accumulator_pok_commitment_group.modulus);
-        st_prime[0] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), 1, accumulator_pok_commitment_group.modulus);                        
+        st_prime[0] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), one, accumulator_pok_commitment_group.modulus);                        
 
         A = BigNumberLib.prepare_modexp(sg, c, accumulator_pok_commitment_group.modulus);
         B = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(accumulator_commitment,BigNumberLib.inverse(sg,accumulator_pok_commitment_group.modulus)), accumulator_pok.s_gamma, accumulator_pok_commitment_group.modulus);
         C = BigNumberLib.prepare_modexp(sh, accumulator_pok.s_psi, accumulator_pok_commitment_group.modulus);
-        st_prime[1] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), 1, accumulator_pok_commitment_group.modulus);                        
+        st_prime[1] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), one, accumulator_pok_commitment_group.modulus);                        
 
         A = BigNumberLib.prepare_modexp(sg, c, accumulator_pok_commitment_group.modulus);
         B = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(sg,accumulator_commitment),accumulator_pok.s_sigma, accumulator_pok_commitment_group.modulus);
         C = BigNumberLib.prepare_modexp(sh, accumulator_pok.s_xi, accumulator_pok_commitment_group.modulus);
-        st_prime[2] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), 1, accumulator_pok_commitment_group.modulus); 
+        st_prime[2] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), one, accumulator_pok_commitment_group.modulus); 
 
 
         A = BigNumberLib.prepare_modexp(accumulator_pok.C_r, c, modulus);
         B = BigNumberLib.prepare_modexp(h_n, accumulator_pok.s_zeta, modulus);
         C = BigNumberLib.prepare_modexp(g_n, accumulator_pok.s_epsilon, modulus);
-        t_prime[0] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), 1, modulus); 
+        t_prime[0] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), one, modulus); 
 
         A = BigNumberLib.prepare_modexp(accumulator_pok.C_e, c, modulus);
         B = BigNumberLib.prepare_modexp(h_n, accumulator_pok.s_eta, modulus);
         C = BigNumberLib.prepare_modexp(g_n, accumulator_pok.s_alpha, modulus);
-        t_prime[1] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), 1, modulus); 
+        t_prime[1] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), one, modulus); 
 
         A = BigNumberLib.prepare_modexp(accumulator, c, modulus);
         B = BigNumberLib.prepare_modexp(accumulator_pok.C_u, accumulator_pok.s_alpha, modulus);
         C = BigNumberLib.prepare_modexp(BigNumberLib.inverse(h_n, modulus), accumulator_pok.s_beta, modulus);
-        t_prime[2] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), 1, modulus);
+        t_prime[2] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), one, modulus);
 
         A = BigNumberLib.prepare_modexp(accumulator_pok.C_r, accumulator_pok.s_alpha, modulus);
         B = BigNumberLib.prepare_modexp(BigNumberLib.inverse(h_n,modulus),accumulator_pok.s_delta, modulus);
         C = BigNumberLib.prepare_modexp(BigNumberLib.inverse(g_n, modulus),accumulator_pok.s_beta, modulus);
-        t_prime[3] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), 1, modulus); 
+        t_prime[3] = BigNumberLib.prepare_modexp(BigNumberLib.bn_mul(BigNumberLib.bn_mul(A,B),C), one, modulus); 
 
         bool[3] memory result_st;
         bool[4] memory result_t;
 
-        result_st[0] = (accumulator_pok.st[0] == st_prime[0]);
-        result_st[1] = (accumulator_pok.st[1] == st_prime[1]);
-        result_st[2] = (accumulator_pok.st[2] == st_prime[2]);
+        result_st[0] = (keccak256(accumulator_pok.st[0]) == keccak256(st_prime[0]));
+        result_st[1] = (keccak256(accumulator_pok.st[1]) == keccak256(st_prime[1]));
+        result_st[2] = (keccak256(accumulator_pok.st[2]) == keccak256(st_prime[2]));
 
-        result_t[0] = (accumulator_pok.t[0] == t_prime[0]);
-        result_t[1] = (accumulator_pok.t[1] == t_prime[1]);
-        result_t[2] = (accumulator_pok.t[2] == t_prime[2]);
-        result_t[3] = (accumulator_pok.t[3] == t_prime[3]);
+        result_t[0] = (keccak256(accumulator_pok.t[0]) == keccak256(t_prime[0]));
+        result_t[1] = (keccak256(accumulator_pok.t[1]) == keccak256(t_prime[1]));
+        result_t[2] = (keccak256(accumulator_pok.t[2]) == keccak256(t_prime[2]));
+        result_t[3] = (keccak256(accumulator_pok.t[3]) == keccak256(t_prime[3]));
 
         //(maxCoinValue * BigNumberLib.BigNumber(2).pow(k_prime + k_dprime + 1))) in params as upper_result_range_value
         BigNumberLib.BigNumber memory lower_result_range_value = upper_result_range_value;
-        lower_result_range_value.neg = 1;
+        lower_result_range_value.neg = true;
         bool result_range = (BigNumberLib.cmp(accumulator_pok.s_alpha, upper_result_range_value) == -1) && (BigNumberLib.cmp(accumulator_pok.s_alpha, lower_result_range_value) == 1);
 
         return (result_st[0] && result_st[1] && result_st[2] && result_t[0] && result_t[1] && result_t[2] && result_t[3] && result_range);   
