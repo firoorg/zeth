@@ -1,6 +1,6 @@
 pragma solidity ^0.4.18;
 
-import "contracts/BigNumberLib.sol";
+import "./BigNumberLib.sol";
 
 /* 
  * mock contract for accessing BigNumber library.

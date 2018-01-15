@@ -2,3 +2,4 @@ zeth.sublime-project
 zeth.sublime-workspace
 .DS_Store
 build/
+node_modules/
