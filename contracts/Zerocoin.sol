@@ -1,4 +1,5 @@
-pragma solidity ^0.4.18;
+pragma solidity ^0.4.19;
+pragma experimental ABIEncoderV2;
 
 import "browser/BigNumberLib.sol";
 
@@ -155,22 +156,21 @@ contract zerocoin {
     //********************************* End Temporary Proof Structures *******************************************
 
     //*************************************** Begin Constructor **************************************************
-    function zerocoin(address _in){
+    function zerocoin(address _in) public{
         require(!set && _in==deployment);
         //add parameters
         //initialize structures
     }
     //***************************************** End Constructor **************************************************
-
+    
     //********************************* Begin 'Mint' validation ****************************************************
-    function validate_coin_mint(bytes commitment_val, uint commitment_msb) public returns (bool success){
-        //TODO denominations
-        BigNumberLib.BigNumber memory commitment = BigNumberLib._new(commitment_val, false, commitment_msb);
-
+    function validate_coin_mint(BigNumberLib.BigNumber commitment) internal returns (bool success){
+        //TODO denominations.
+        BigNumberLib.BigNumber memory stored_commitment = commitments[keccak256(commitment)];
         assert (BigNumberLib.cmp(min_coin_value,commitment)==-1 && 
                 BigNumberLib.cmp(commitment, max_coin_value)==-1 && 
-                is_prime(commitment) &&
-                !(keccak256(commitments[keccak256(commitment)])==keccak256(commitment)));
+                BigNumberLib.is_prime(commitment) &&
+                !(keccak256(stored_commitment)==keccak256(commitment))); //hash for cheap comparison
 
         //must also check that denomination of eth sent is correct
         
@@ -187,47 +187,31 @@ contract zerocoin {
 
         return true;
     }
-
-    function is_prime(BigNumberLib.BigNumber serial_number_commitment) private returns (bool){
-        //executes Miller-Rabin Primality Test for input.
-
-    }
-
-    //********************************* End 'Mint' validation **********************************************************
-
+    //********************************* End 'Mint' validation ****************************************************
+    
     //********************************* Begin 'Spend' verification *****************************************************
-    function verify_coin_spend(bytes commitment_pok_in, 
-                               bytes accumulator_pok_in, 
-                               bytes serial_number_sok_in, 
-                               bytes _accumulator,
-                               bytes _coin_serial_number,
-                               bytes _serial_number_commitment,
-                               bytes _accumulator_commitment,
-                               bytes output_address) public returns (bool result) { 
+    function verify_coin_spend(_commitment_pok commitment_pok, 
+                               _accumulator_pok accumulator_pok, 
+                               _serial_number_sok serial_number_sok, 
+                               BigNumberLib.BigNumber accumulator,
+                               BigNumberLib.BigNumber coin_serial_number,
+                               BigNumberLib.BigNumber serial_number_commitment,
+                               BigNumberLib.BigNumber accumulator_commitment,
+                               address output_address) internal returns (bool result) { //internal for now - will be made public/external
 
-        //TODO serialize bytes inputs as struct objects defined below using asm   
-        _commitment_pok memory commitment_pok;
-        assembly { }
-        _accumulator_pok memory accumulator_pok;
-        _serial_number_sok memory serial_number_sok;
-        BigNumberLib.BigNumber memory accumulator;
-        BigNumberLib.BigNumber memory serial_number_commitment;
-        BigNumberLib.BigNumber memory accumulator_commitment;
-        BigNumberLib.BigNumber memory coin_serial_number;
-
+        BigNumberLib.BigNumber memory stored_coin_serial_number = commitments[keccak256(coin_serial_number)];
 
         assert(verify_commitment_pok(commitment_pok, serial_number_commitment, accumulator_commitment) &&
                verify_accumulator_pok(accumulator_pok, accumulator, accumulator_commitment) &&
                verify_serial_number_sok(serial_number_sok, coin_serial_number, serial_number_commitment) &&
-               !( keccak256(serial_numbers[keccak256(coin_serial_number)]) == keccak256(coin_serial_number) ) );
+               !( keccak256(stored_coin_serial_number) == keccak256(coin_serial_number) ) );
         
-        //send denomination of eth from value pool to output_address
+        //TODO send denomination of eth from value pool to output_address
 
         //add coin_serial_number to map of used serial numbers
-        keccak256(serial_numbers[keccak256(coin_serial_number)])==keccak256(coin_serial_number); //hashing for cheap comparison
+        serial_numbers[keccak256(coin_serial_number)] = coin_serial_number;
     }
     
-
     function verify_commitment_pok(_commitment_pok commitment_pok, BigNumberLib.BigNumber serial_number_commitment, BigNumberLib.BigNumber accumulator_commitment) private returns (bool result){
         // Compute the maximum range of S1, S2, S3 and verify that the given values are in a correct range.
 
@@ -286,7 +270,7 @@ contract zerocoin {
         
         return sha256(sha256(w));
     }
-
+    
     function calculate_challenge_commitment_pok(BigNumberLib.BigNumber serial_number_commitment, BigNumberLib.BigNumber accumulator_commitment, BigNumberLib.BigNumber T1, BigNumberLib.BigNumber T2) private returns (BigNumberLib.BigNumber){
         /* Hash together the following elements:
          * -proof identifier
@@ -301,13 +285,13 @@ contract zerocoin {
          */
 
          bytes memory hasher = challenge_commitment_base;
-         //TBD: Assembly implementation
+         //TODO: Assembly implementation
 
          BigNumberLib.BigNumber memory res; //FIXME
 
          return res;
     }
-
+    
     function calculate_challenge_serial_number_pok(BigNumberLib.BigNumber a_exp, BigNumberLib.BigNumber b_exp, BigNumberLib.BigNumber h_exp) private returns (BigNumberLib.BigNumber){
         BigNumberLib.BigNumber memory a = coin_commitment_group.g;
         BigNumberLib.BigNumber memory b = coin_commitment_group.h;
@@ -320,7 +304,7 @@ contract zerocoin {
 
         return BigNumberLib.modmul(BigNumberLib.prepare_modexp(g, exponent, serial_number_sok_commitment_group.modulus), BigNumberLib.prepare_modexp(h, h_exp, serial_number_sok_commitment_group.modulus), serial_number_sok_commitment_group.modulus);   
     }
-
+    
     function verify_serial_number_sok(_serial_number_sok serial_number_sok, BigNumberLib.BigNumber coin_serial_number, BigNumberLib.BigNumber serial_number_commitment) private returns (bool result){
 
         //initially verify that coin_serial_number has not already been used. mapping gives O(1) access
@@ -359,7 +343,7 @@ contract zerocoin {
         
         }
     
-    // Verifies that a commitment c is accumulated in accumulator a
+        // Verifies that a commitment c is accumulated in accumulator a
     function verify_accumulator_pok(_accumulator_pok accumulator_pok, BigNumberLib.BigNumber accumulator, BigNumberLib.BigNumber accumulator_commitment) private returns (bool){
 
         //initially verify that accumulator exists. mapping gives O(1) access
@@ -440,5 +424,7 @@ contract zerocoin {
 
         return (result_st[0] && result_st[1] && result_st[2] && result_t[0] && result_t[1] && result_t[2] && result_t[3] && result_range);   
     }
+
+    
     //********************************* End 'Spend' verification *****************************************************
 }
