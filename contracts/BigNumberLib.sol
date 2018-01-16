@@ -515,6 +515,130 @@ library BigNumberLib {
 
         return 0; //same value.
     }
+
+    //returns whether or not input is equal to bignum one.
+    function is_zero(BigNumber _in) internal returns(bool){
+
+    }
+    
+    //returns whether or not input is equal to bignum one.
+    function is_one() internal returns(bool){
+
+    }
+    
+    //returns whether or not input is equal to bignum one.
+    function is_two() internal returns(bool){
+
+    }
+
+    //***************** Begin is_prime functions *************************************
+
+    /*
+     * number of Miller-Rabin iterations for an error rate of less than 2^-80 for
+     * random 'b'-bit input, b >= 100 (taken from table 4.4 in the Handbook of
+     * Applied Cryptography [Menezes, van Oorschot, Vanstone; CRC Press 1996];
+     * original paper: Damgaard, Landrock, Pomerance: Average case error
+     * estimates for the strong probable prime test. -- Math. Comp. 61 (1993)
+     * 177-194) (from OpenSSL. if b<100 also returns 27.)
+     */
+    function prime_checks_for_size(uint bit_size) private returns(uint){
+
+        bit_size >= 1300 ?  2 :
+        bit_size >=  850 ?  3 :
+        bit_size >=  650 ?  4 :
+        bit_size >=  550 ?  5 :
+        bit_size >=  450 ?  6 :
+        bit_size >=  400 ?  7 :
+        bit_size >=  350 ?  8 :
+        bit_size >=  300 ?  9 :
+        bit_size >=  250 ? 12 :
+        bit_size >=  200 ? 15 :
+        bit_size >=  150 ? 18 :
+        /* b >= 100 */ 27;
+    }
+
+    //returns -  0: likely prime, 1: composite number (definite non-prime).
+    function witness(BigNumber w, BigNumber a, BigNumber a1, BigNumber a1_odd, uint k) private returns (int){
+        BigNumber memory  one = BigNumber(hex"01",false,1); 
+        w = prepare_modexp(w, a1_odd, a); // w := w^a1_odd mod a
+
+        if (cmp(w,one)==0) return 0; // probably prime (?)
+                           
+        if (cmp(w, a1)==0) return 0; // w == -1 (mod a), 'a' is probably prime
+                           
+        while (--k != 0) {
+            w = modmul(w,w,a); // w := w^2 mod a TODO: make a sqrmod function (first part of mul anyway - just turning into function)
+             
+            if (cmp(w,one)==0) return 1;// 'a' is composite, otherwise a previous 'w' would have been == -1 (mod 'a')
+                                    
+            if (cmp(w, a1)==0) return 0; // w == -1 (mod a), 'a' is probably prime
+                          
+        }
+        /*
+         * If we get here, 'w' is the (a-1)/2-th power of the original 'w', and
+         * it is neither -1 nor +1 -- so 'a' cannot be prime
+         */  
+        return 1;
+    }
+
+    //executes Miller-Rabin Primality Test to see whether input bignum is prime or not.
+    //number of iterations of the test will be calculated internally
+    function is_prime(BigNumber a) internal returns (bool){
+
+        BigNumber memory zero = BigNumber(hex"00",false,0); 
+        BigNumber memory  one = BigNumber(hex"01",false,1); 
+        BigNumber memory  two = BigNumber(hex"02",false,2); 
+
+        if (cmp(a, one) != 1) return false; // if value is <= 1
+                    
+        // first look for small factors
+        if (is_even(a)==1) return (cmp(a, two)==0); // if a is even: a is prime if and only if a == 2 
+            
+        BigNumber memory a1 = prepare_sub(a,one);
+
+        
+        // *******write  A1  as  A1_odd * 2^k.**********
+        uint k = 1;
+        uint k_mask=1; //set it to you to keep it par with k
+        uint a_ptr;
+        uint val;
+        assembly{ 
+            a_ptr := add(mload(a),mload(mload(a))) // get address of least significant portion of a
+            val := mload(a_ptr)  //load it
+        }
+        bool bit_set = false;
+        while(!bit_set){
+            if(k % 256 == 0){
+                a_ptr -= 32;
+                assembly {val := mload(a_ptr)}
+                k_mask = 1;
+            }
+            bit_set = ((val & k_mask) != 0);
+            k_mask*=2; //set next bit
+            k++;
+        }        
+        BigNumber memory A1_odd = right_shift(a1, k);
+
+        // **********************************************
+
+        int j;
+        uint num_checks = prime_checks_for_size(a.msb);
+        BigNumber memory  check;
+        for (uint i = 0; i < num_checks; i++) {
+
+            //if (!BN_priv_rand_range(check, A1)) goto err; //TODO oraclize random call for size specified. store in 'check'.
+            check = prepare_add(check, one);   
+            // now 1 <= check < a.
+
+            j = witness(check, a, a1, A1_odd, k);
+            if (j == -1 || j == 1) return false;
+        }
+
+        //if we've got to here, a is likely a prime.
+        return true;
+    }
+
+    //***************** End is_prime functions *************************************
     
 
     //takes in a bytes value and returns the value shifted to the right by 'value' bits.
