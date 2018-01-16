@@ -1,0 +1,29 @@
+{
+  "name": "zeth",
+  "version": "1.0.0",
+  "description": "Zerocoin protocol on ethereum.",
+  "private": true,
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zcoinofficial/zeth.git"
+  },
+  "author": "zcoinofficial",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zcoinofficial/zeth/issues"
+  },
+  "homepage": "https://github.com/zcoinofficial/zeth#readme",
+  "dependencies": {
+    "bn.js": "^4.11.8",
+    "crypto": "^1.0.1",
+    "ethereumjs-tx": "^1.3.3",
+    "truffle": "^4.0.4",
+    "web3": "^1.0.0-beta.27"
+  }
+}

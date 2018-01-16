@@ -57,14 +57,14 @@ library BigNumberLib {
     //     r.msb = get_bit_size(val);
     // }
 
-    // function _new(bytes val, bool neg, uint msb) internal returns(BigNumber r){
-    //     uint val_msword; 
-    //     assembly {val_msword := mload(add(val,0x20))} //get msword of result
-    //     require((val.length % 32 == 0) && (val_msword>>(msb%256)==1));
-    //     r.val = val;
-    //     r.neg = neg;
-    //     r.msb = msb;
-    // }
+    function _new(bytes val, bool neg, uint msb) internal returns(BigNumber r){
+        uint val_msword; 
+        assembly {val_msword := mload(add(val,0x20))} //get msword of result
+        require((val.length % 32 == 0) && (val_msword>>(msb%256)==1));
+        r.val = val;
+        r.neg = neg;
+        r.msb = msb;
+    }
     
     //in order to do correct addition or subtraction we have to handle the sign.
     //the following two functions takes two BigNumbers, discovers the sign of the result based on the values, and calls the correct operation.
