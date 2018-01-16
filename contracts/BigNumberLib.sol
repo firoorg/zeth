@@ -1,6 +1,6 @@
 pragma solidity ^0.4.18;
 
-library BigNumberLib {
+library BigNumberLib is usingOraclize {
     /*
      values in memory on the EVM are in 256 bit (32 byte) words - BigNumbers are considered to be consecutive words in big-endian order (top-bottom: word 0 - word n).
      The BigNumber struct consists of the bignumber value, the most significant bit, and the sign of the value.
@@ -37,6 +37,9 @@ library BigNumberLib {
      The most significant bit is tracked throughout the lifespan of the BigNumber instance. when the caller creates a BigNumber in the zerocoin contract, they also indicate this value.
      This is verified in the contract by right shifting the most significant word by the passed value mod 256, and verifying the result is equal to 1. 
     */
+
+    // holds the call info to is_prime while waiting for randomness from Oraclize.
+    mapping(uint => BigNumber) public is_prime_calls;
     
     //BigNumber is defined as a Struct.
     //DO NOT ALLOW INSTANCIATING THIS DIRECTLY - use the init functions defined below.
@@ -339,10 +342,14 @@ library BigNumberLib {
         
      }
     
-    // function bn_div(BigNumber a, BigNumber b) internal returns(BigNumber res){
-    //     //TODO turn into oracle call. we will setup api with oraclize. (this is not actually necessary for zerocoin but including it anyway for the sake of the library).
-
-    // }
+    //this method for bn_div allows users to pass their own result and have the contract verify it.
+    function bn_div(BigNumber a, BigNumber b, BigNumber b_inverse, BigNumber user_result) internal returns(BigNumber contract_result){
+        //a / b = a * (1/b) || (1/a) * b
+        // user passes result and inverse of b.
+        // contract does a single multiplication and asserts results are the same; if so, we return user result.
+        contract_result = bn_mul(a, b_inverse);
+        require(keccak256(contract_result)==keccak256(user_result));
+    }
     
     function prepare_modexp(BigNumber base, BigNumber exponent, BigNumber modulus) internal returns(BigNumber result) {
         if(exponent.neg==true){ 
@@ -435,10 +442,11 @@ library BigNumberLib {
         res = prepare_modexp(bn_mul(a,b),one,modulus);       
     }
 
-    function inverse(BigNumber base, BigNumber modulus) internal returns(BigNumber new_BigNumber){
-        //TODO Turn this into call to Oraclize
+    function inverse(BigNumber base, BigNumber modulus, BigNumber user_result) internal returns(BigNumber new_BigNumber){
         //verify with modmul - verify (base * result) % m == 1
-        return new_BigNumber;
+        BigNumber memory one = BigNumber(hex"01",false,1);
+        require(keccak256(modmul(base, user_result, modulus)) == keccak256(one));
+        return user_result;
      }
      
     
@@ -541,6 +549,56 @@ library BigNumberLib {
      * estimates for the strong probable prime test. -- Math. Comp. 61 (1993)
      * 177-194) (from OpenSSL. if b<100 also returns 27.)
      */
+
+     function prepare_is_prime(BigNumber a){ // usually called 'update()'
+
+        oraclize_setProof(proofType_Ledger); // sets the Ledger authenticity proof
+
+        //get bit size of a, call prime_checks, multiply for bits, /8 for bytes.
+        uint num_bytes = (prime_checks_for_size(a.msb) * a.msb)/8;
+        //call oraclize with above
+        uint delay = 0; // number of seconds to wait before the execution takes place
+        uint callbackGas = 200000; // amount of gas we want Oraclize to set for the callback function TODO change based on size?
+        bytes32 queryId = oraclize_newRandomDSQuery(delay, num_bytes, callbackGas); // this function internally generates the correct oraclize_query and returns its queryId
+
+        //store input in storage, indexed by queryId
+        is_prime_calls[queryId] = a;
+     }
+
+
+    // the callback function is called by Oraclize when the result is ready
+    // the oraclize_randomDS_proofVerify modifier prevents an invalid proof from executing this function code:
+    // the proof validity is fully verified on-chain
+    function __callback(bytes32 _queryId, string _result, bytes _proof) {         
+        
+        require (msg.sender == oraclize_cbAddress() &&
+                 oraclize_randomDS_proofVerify__returnCode(_queryId, _result, _proof) == 0); //1. is 'require()' best? 2. if proof fails, who's liable (ie. who pays)? 
+    
+        // the proof verification has passed. we have safely generated randomness..
+        //grab storage for queryID returned. free up storage, return gas to calling contract
+
+        BigNumber memory a = is_prime_calls[queryId];
+
+        uint size; //valuer from prime_checks_for_size - prob just call again but might put in storage
+
+        is_prime_calls[queryId] = 0; //TODO: setting to all zeroes frees up storage. how to return gas..
+        
+        //split randomness into x BigNums, where x = prime_checks_for_size value for bits.
+        BigNumber[size] memory randomness;
+        uint bytes_size = a.msb/8;
+        bytes val;
+        uint val_ptr; //set this to start of _result -  - 0x44? 4 bytes method sig, 1 bytes32, 1 length
+        for(; size<(-1); size--){
+            assembly{ calldatacopy(val, val_ptr, bytes_size) }
+            randomness[size].val = val;
+            randomness[size].msb = get_bit_size(val); 
+            randomness[size].neg = false; 
+        }
+
+        //finally execute is_prime with original input data & randomness.
+        is_prime(a, randomness);
+    }
+    
     function prime_checks_for_size(uint bit_size) private returns(uint){
 
         bit_size >= 1300 ?  2 :
@@ -559,7 +617,7 @@ library BigNumberLib {
 
     //returns -  0: likely prime, 1: composite number (definite non-prime).
     function witness(BigNumber w, BigNumber a, BigNumber a1, BigNumber a1_odd, uint k) private returns (int){
-        BigNumber memory  one = BigNumber(hex"01",false,1); 
+        BigNumber memory one = BigNumber(hex"01",false,1); 
         w = prepare_modexp(w, a1_odd, a); // w := w^a1_odd mod a
 
         if (cmp(w,one)==0) return 0; // probably prime (?)
@@ -583,7 +641,7 @@ library BigNumberLib {
 
     //executes Miller-Rabin Primality Test to see whether input bignum is prime or not.
     //number of iterations of the test will be calculated internally
-    function is_prime(BigNumber a) internal returns (bool){
+    function is_prime(BigNumber a, BigNumber[] randomness) internal returns (bool){
 
         BigNumber memory zero = BigNumber(hex"00",false,0); 
         BigNumber memory  one = BigNumber(hex"01",false,1); 
@@ -595,8 +653,7 @@ library BigNumberLib {
         if (is_even(a)==1) return (cmp(a, two)==0); // if a is even: a is prime if and only if a == 2 
             
         BigNumber memory a1 = prepare_sub(a,one);
-
-        
+       
         // *******write  A1  as  A1_odd * 2^k.**********
         uint k = 1;
         uint k_mask=1; //set it to you to keep it par with k
@@ -626,8 +683,7 @@ library BigNumberLib {
         BigNumber memory  check;
         for (uint i = 0; i < num_checks; i++) {
 
-            //if (!BN_priv_rand_range(check, A1)) goto err; //TODO oraclize random call for size specified. store in 'check'.
-            check = prepare_add(check, one);   
+            check = prepare_add(randomness[i], one);   
             // now 1 <= check < a.
 
             j = witness(check, a, a1, A1_odd, k);
