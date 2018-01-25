@@ -498,13 +498,13 @@ library BigNumberLib {
     function struct_cmp(BigNumber a, BigNumber b) internal returns(int){
         //the function only runs should both values have the same sign.
         //switch is used to decide this; if both negative, invert result; if both positive, switch has no effect.
-        int switch = 1;
-        if(a.neg && b.neg) switch = -1;
+        int trigger = 1;
+        if(a.neg && b.neg) trigger = -1;
         else if(a.neg==false && b.neg==true) return 1;
         else if(a.neg==true && b.neg==false) return -1;
 
-        if(a.msb>b.msb) return 1*switch;
-        if(b.msb>a.msb) return -1*switch;
+        if(a.msb>b.msb) return 1*trigger;
+        if(b.msb>a.msb) return -1*trigger;
 
         uint a_ptr;
         uint b_ptr;
@@ -524,8 +524,8 @@ library BigNumberLib {
                 b_word := mload(add(b_ptr,i))
             }
 
-            if(a_word>b_word) return 1*switch;
-            if(b_word>a_word) return -1*switch;
+            if(a_word>b_word) return 1*trigger;
+            if(b_word>a_word) return -1*trigger;
 
         }
 

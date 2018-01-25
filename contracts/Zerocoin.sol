@@ -1,7 +1,7 @@
 pragma solidity ^0.4.19;
 pragma experimental ABIEncoderV2;
 
-import "browser/BigNumberLib.sol";
+import "../BigNumberLib.sol";
 
 contract zerocoin { 
 
