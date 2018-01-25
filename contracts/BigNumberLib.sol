@@ -1,6 +1,6 @@
 pragma solidity ^0.4.18;
 
-library BigNumberLib is usingOraclize {
+library BigNumberLib {
     /*
      values in memory on the EVM are in 256 bit (32 byte) words - BigNumbers are considered to be consecutive words in big-endian order (top-bottom: word 0 - word n).
      The BigNumber struct consists of the bignumber value, the most significant bit, and the sign of the value.
@@ -39,7 +39,7 @@ library BigNumberLib is usingOraclize {
     */
 
     // holds the call info to is_prime while waiting for randomness from Oraclize.
-    mapping(uint => BigNumber) public is_prime_calls;
+    
     
     //BigNumber is defined as a Struct.
     //DO NOT ALLOW INSTANCIATING THIS DIRECTLY - use the init functions defined below.
@@ -72,7 +72,7 @@ library BigNumberLib is usingOraclize {
     //in order to do correct addition or subtraction we have to handle the sign.
     //the following two functions takes two BigNumbers, discovers the sign of the result based on the values, and calls the correct operation.
     function prepare_add(BigNumber a, BigNumber b) internal returns(BigNumber r) {
-        BigNumber memory zero = BigNumber(hex"00",false,0); 
+        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
         if(a.msb==0 && b.msb==0) return zero;
         if(a.msb==0) return b;
         if(b.msb==0) return a;  
@@ -182,7 +182,7 @@ library BigNumberLib is usingOraclize {
     }
 
     function prepare_sub(BigNumber a, BigNumber b) internal returns(BigNumber r) {
-        BigNumber memory zero = BigNumber(hex"00",false,0); 
+        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
         bytes memory val;
         int compare;
         uint msb;
@@ -297,7 +297,7 @@ library BigNumberLib is usingOraclize {
         // we use modexp contract for squaring of (a # b), passing modulus as 1|0*n, where n = 2 * bit length of (a # b) (and # = +/- depending on call).
         // therefore the modulus is the minimum value we can pass that will allow us to do the squaring.
                 
-        BigNumber memory two = BigNumber(hex"02",false,2);        
+        BigNumber memory two = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000002",false,2);        
         
         uint mod_index = 0;
         uint val;
@@ -308,7 +308,7 @@ library BigNumberLib is usingOraclize {
         assembly { mod_index := mul(add_and_modexp_msb,2) }
         val = uint(1) << ((mod_index % 256));
         
-        _modulus = hex"00";
+        _modulus = hex"0000000000000000000000000000000000000000000000000000000000000000";
         assembly {
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
             mstore(add(_modulus,0x20), val)
@@ -326,7 +326,7 @@ library BigNumberLib is usingOraclize {
         assembly {mod_index := mul(sub_and_modexp_msb,2)}
         val = uint(1) << ((mod_index % 256));
         
-        _modulus = hex"00";
+        _modulus = hex"0000000000000000000000000000000000000000000000000000000000000000";
         assembly {
             mstore(_modulus, mul(add(div(mod_index,256),1),0x20))
             mstore(add(_modulus,0x20), val)
@@ -342,13 +342,39 @@ library BigNumberLib is usingOraclize {
         
      }
     
-    //this method for bn_div allows users to pass their own result and have the contract verify it.
-    function bn_div(BigNumber a, BigNumber b, BigNumber b_inverse, BigNumber user_result) internal returns(BigNumber contract_result){
-        //a / b = a * (1/b) || (1/a) * b
-        // user passes result and inverse of b.
-        // contract does a single multiplication and asserts results are the same; if so, we return user result.
-        contract_result = bn_mul(a, b_inverse);
-        require(keccak256(contract_result)==keccak256(user_result));
+    //this method for bn_div allows users to pass their own result and have the contract verify it - therefore the result is valid.
+    //this is based on the idea that as we already have multiplication, it's far cheaper to use that than roll an expensive native div operation.
+    function bn_div(BigNumber a, BigNumber b, BigNumber result) internal returns(BigNumber contract_result){
+        //(a/b = result) == (a = b * result)
+        //integer division only; therefore:
+        //  verify ((b*result) + a % (b*result)) == a.
+        //eg. 17/7 == 2:
+        //  verify  (7*2) + (17 % (7*2)) == 17
+
+        //first handle sign.
+        if(a.neg==true || b.neg==true){
+            if (a.neg==true && b.neg==true) require(result.neg==false);
+            else require(result.neg==true);
+        } else require(result.neg==false);
+        
+        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0);
+
+        require(!(cmp(b,zero)==0)); //require denominator to not be zero.
+
+        if(cmp(result,zero)==0){                //if result is 0:
+            if(cmp(a,b)==-1) return result;     // return zero if a<b (numer<denom)
+            else throw;                         // else fail.
+        }      
+
+        BigNumber memory fst = bn_mul(b,result); // do multiplication (b * result)
+        if(cmp(fst,a)==0) return result;  // check if we already have a. if so, no mod necessary, and return result.
+
+        BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
+        BigNumber memory snd = prepare_modexp(a,one,fst); //a mod (b*result)
+
+        require(cmp(prepare_add(fst,snd),a)==0); // ((b*result) + a % (b*result)) == a
+
+        return result;
     }
     
     function prepare_modexp(BigNumber base, BigNumber exponent, BigNumber modulus) internal returns(BigNumber result) {
@@ -438,18 +464,30 @@ library BigNumberLib is usingOraclize {
         //here we call mul for the two input values, and mod the result with modulus, passing exponent as 1.
         //sign is taken care of in sub functions
 
-        BigNumber memory one = BigNumber(hex"01",false,1);
+        BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
         res = prepare_modexp(bn_mul(a,b),one,modulus);       
     }
 
-    function inverse(BigNumber base, BigNumber modulus, BigNumber user_result) internal returns(BigNumber new_BigNumber){
+    //gets inverse of bignum value mod modulus.
+    //takes in result and verifies correctness; if so, returns that result.
+    function mod_inverse(BigNumber base, BigNumber modulus, BigNumber user_result) internal returns(BigNumber){
         //verify with modmul - verify (base * result) % m == 1
-        BigNumber memory one = BigNumber(hex"01",false,1);
-        require(keccak256(modmul(base, user_result, modulus)) == keccak256(one));
+        require(base.neg==false && modulus.neg==false); //assert positivity of inputs
+        BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
+        
+        /*
+         * the following proves:
+         * - user result passed is correct for values a and m
+         * - modular inverse exists for values a and m.
+         * otherwise it fails.
+         */
+        //valid = (cmp(modmul(base, user_result, modulus),one)==0);
+        //TODO return result? more intuitive but more expensive; however user has to handle this function in a different way anyway..
+        require(struct_cmp(modmul(base, user_result, modulus),one)==0);
+
         return user_result;
      }
      
-    
     function is_even(BigNumber _in) internal returns(uint ret){
         assembly{
             let in_ptr := add(mload(_in), mload(mload(_in))) //go to last value
@@ -457,42 +495,42 @@ library BigNumberLib is usingOraclize {
         }
     }
 
-    // function struct_cmp(BigNumber a, BigNumber b) internal returns(int){
-    //     //the function only runs should both values have the same sign.
-    //     //switch is used to decide this; if both negative, invert result, of both positive, switch has no effect.
-    //     int switch = 1;
-    //     if(a.neg && b.neg) switch = -1;
-    //     else if(a.neg==false && b.neg==true) return 1;
-    //     else if(a.neg==true && b.neg==false) return -1;
+    function struct_cmp(BigNumber a, BigNumber b) internal returns(int){
+        //the function only runs should both values have the same sign.
+        //switch is used to decide this; if both negative, invert result; if both positive, switch has no effect.
+        int switch = 1;
+        if(a.neg && b.neg) switch = -1;
+        else if(a.neg==false && b.neg==true) return 1;
+        else if(a.neg==true && b.neg==false) return -1;
 
-    //     if(a.msb>b.msb) return 1*switch;
-    //     if(b.msb>a.msb) return -1*switch;
+        if(a.msb>b.msb) return 1*switch;
+        if(b.msb>a.msb) return -1*switch;
 
-    //     uint a_ptr;
-    //     uint b_ptr;
-    //     uint a_word;
-    //     uint b_word;
+        uint a_ptr;
+        uint b_ptr;
+        uint a_word;
+        uint b_word;
 
-    //     uint len = a.val.length; //msb is same so no need to check length.
+        uint len = a.val.length; //msb is same so no need to check length.
 
-    //     assembly{
-    //         a_ptr := add(mload(a),0x20) 
-    //         b_ptr := add(mload(b),0x20) // 'a' and 'b' store the memory address of 'val' of the struct.
-    //     }
+        assembly{
+            a_ptr := add(mload(a),0x20) 
+            b_ptr := add(mload(b),0x20) // 'a' and 'b' store the memory address of 'val' of the struct.
+        }
 
-    //     for(uint i=0; i<len;i+=32){
-    //         assembly{
-    //             a_word := mload(add(a_ptr,i))
-    //             b_word := mload(add(b_ptr,i))
-    //         }
+        for(uint i=0; i<len;i+=32){
+            assembly{
+                a_word := mload(add(a_ptr,i))
+                b_word := mload(add(b_ptr,i))
+            }
 
-    //         if(a_word>b_word) return 1*switch;
-    //         if(b_word>a_word) return -1*switch;
+            if(a_word>b_word) return 1*switch;
+            if(b_word>a_word) return -1*switch;
 
-    //     }
+        }
 
-    //     return 0; //same value.
-    // }
+        return 0; //same value.
+    }
 
     function cmp(BigNumber a, BigNumber b) internal returns(int){
         if(a.msb>b.msb) return 1;
@@ -524,22 +562,15 @@ library BigNumberLib is usingOraclize {
         return 0; //same value.
     }
 
-    //returns whether or not input is equal to bignum one.
-    function is_zero(BigNumber _in) internal returns(bool){
-
-    }
-    
-    //returns whether or not input is equal to bignum one.
-    function is_one() internal returns(bool){
-
-    }
-    
-    //returns whether or not input is equal to bignum one.
-    function is_two() internal returns(bool){
-
-    }
-
     //***************** Begin is_prime functions *************************************
+
+
+    //is_prime needs a secure source of randomness. Included here is the ability to call Oraclize for this randomness.
+    //the issue is that randomness is returned 1-2 blocks after the calling transaction is executed- as the call is non-blocking, the result must be handled by the calling
+    //contract. i.e. synchronous code which depends on the result from this function.
+    //the recommended way to do this is for the calling contract to copy the prepare_is_prime
+
+    //if you don't copy code
 
     /*
      * number of Miller-Rabin iterations for an error rate of less than 2^-80 for
@@ -550,54 +581,55 @@ library BigNumberLib is usingOraclize {
      * 177-194) (from OpenSSL. if b<100 also returns 27.)
      */
 
-     function prepare_is_prime(BigNumber a){ // usually called 'update()'
+    //Re-add when actually getting randomness..
+    //  function prepare_is_prime(BigNumber a){ // usually called 'update()'
 
-        oraclize_setProof(proofType_Ledger); // sets the Ledger authenticity proof
+    //     oraclize_setProof(proofType_Ledger); // sets the Ledger authenticity proof
 
-        //get bit size of a, call prime_checks, multiply for bits, /8 for bytes.
-        uint num_bytes = (prime_checks_for_size(a.msb) * a.msb)/8;
-        //call oraclize with above
-        uint delay = 0; // number of seconds to wait before the execution takes place
-        uint callbackGas = 200000; // amount of gas we want Oraclize to set for the callback function TODO change based on size?
-        bytes32 queryId = oraclize_newRandomDSQuery(delay, num_bytes, callbackGas); // this function internally generates the correct oraclize_query and returns its queryId
+    //     //get bit size of a, call prime_checks, multiply for bits, /8 for bytes.
+    //     uint num_bytes = (prime_checks_for_size(a.msb) * a.msb)/8;
+    //     //call oraclize with above
+    //     uint delay = 0; // number of seconds to wait before the execution takes place
+    //     uint callbackGas = 200000; // amount of gas we want Oraclize to set for the callback function TODO change based on size?
+    //     bytes32 queryId = oraclize_newRandomDSQuery(delay, num_bytes, callbackGas); // this function internally generates the correct oraclize_query and returns its queryId
 
-        //store input in storage, indexed by queryId
-        is_prime_calls[queryId] = a;
-     }
+    //     //store input in storage, indexed by queryId
+    //     is_prime_calls[queryId] = a;
+    //  }
 
 
-    // the callback function is called by Oraclize when the result is ready
-    // the oraclize_randomDS_proofVerify modifier prevents an invalid proof from executing this function code:
-    // the proof validity is fully verified on-chain
-    function __callback(bytes32 _queryId, string _result, bytes _proof) {         
+    // // the callback function is called by Oraclize when the result is ready
+    // // the oraclize_randomDS_proofVerify modifier prevents an invalid proof from executing this function code:
+    // // the proof validity is fully verified on-chain
+    // function __callback(bytes32 _queryId, string _result, bytes _proof) {         
         
-        require (msg.sender == oraclize_cbAddress() &&
-                 oraclize_randomDS_proofVerify__returnCode(_queryId, _result, _proof) == 0); //1. is 'require()' best? 2. if proof fails, who's liable (ie. who pays)? 
+    //     require (msg.sender == oraclize_cbAddress() &&
+    //              oraclize_randomDS_proofVerify__returnCode(_queryId, _result, _proof) == 0); //1. is 'require()' best? 2. if proof fails, who's liable (ie. who pays)? 
     
-        // the proof verification has passed. we have safely generated randomness..
-        //grab storage for queryID returned. free up storage, return gas to calling contract
+    //     // the proof verification has passed. we have safely generated randomness..
+    //     //grab storage for queryID returned. free up storage, return gas to calling contract
 
-        BigNumber memory a = is_prime_calls[queryId];
+    //     BigNumber memory a = is_prime_calls[queryId];
 
-        uint size; //valuer from prime_checks_for_size - prob just call again but might put in storage
+    //     uint size; //valuer from prime_checks_for_size - prob just call again but might put in storage
 
-        is_prime_calls[queryId] = 0; //TODO: setting to all zeroes frees up storage. how to return gas..
+    //     is_prime_calls[queryId] = 0; //TODO: setting to all zeroes frees up storage. how to return gas..
         
-        //split randomness into x BigNums, where x = prime_checks_for_size value for bits.
-        BigNumber[size] memory randomness;
-        uint bytes_size = a.msb/8;
-        bytes val;
-        uint val_ptr; //set this to start of _result -  - 0x44? 4 bytes method sig, 1 bytes32, 1 length
-        for(; size<(-1); size--){
-            assembly{ calldatacopy(val, val_ptr, bytes_size) }
-            randomness[size].val = val;
-            randomness[size].msb = get_bit_size(val); 
-            randomness[size].neg = false; 
-        }
+    //     //split randomness into x BigNums, where x = prime_checks_for_size value for bits.
+    //     BigNumber[size] memory randomness;
+    //     uint bytes_size = a.msb/8;
+    //     bytes val;
+    //     uint val_ptr; //set this to start of _result -  - 0x44? 4 bytes method sig, 1 bytes32, 1 length
+    //     for(; size<(-1); size--){
+    //         assembly{ calldatacopy(val, val_ptr, bytes_size) }
+    //         randomness[size].val = val;
+    //         randomness[size].msb = get_bit_size(val); 
+    //         randomness[size].neg = false; 
+    //     }
 
-        //finally execute is_prime with original input data & randomness.
-        is_prime(a, randomness);
-    }
+    //     //finally execute is_prime with original input data & randomness.
+    //     is_prime(a, randomness);
+    // }
     
     function prime_checks_for_size(uint bit_size) private returns(uint){
 
@@ -615,9 +647,9 @@ library BigNumberLib is usingOraclize {
         /* b >= 100 */ 27;
     }
 
-    //returns -  0: likely prime, 1: composite number (definite non-prime).
+    // //returns -  0: likely prime, 1: composite number (definite non-prime).
     function witness(BigNumber w, BigNumber a, BigNumber a1, BigNumber a1_odd, uint k) private returns (int){
-        BigNumber memory one = BigNumber(hex"01",false,1); 
+        BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1); 
         w = prepare_modexp(w, a1_odd, a); // w := w^a1_odd mod a
 
         if (cmp(w,one)==0) return 0; // probably prime (?)
@@ -643,20 +675,24 @@ library BigNumberLib is usingOraclize {
     //number of iterations of the test will be calculated internally
     function is_prime(BigNumber a, BigNumber[] randomness) internal returns (bool){
 
-        BigNumber memory zero = BigNumber(hex"00",false,0); 
-        BigNumber memory  one = BigNumber(hex"01",false,1); 
-        BigNumber memory  two = BigNumber(hex"02",false,2); 
+        //TODO ensure input is coming from accompanying randomness contract (at address specified)
+        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
+        BigNumber memory  one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1); 
+        BigNumber memory  two = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000002",false,2); 
 
         if (cmp(a, one) != 1) return false; // if value is <= 1
                     
         // first look for small factors
         if (is_even(a)==1) return (cmp(a, two)==0); // if a is even: a is prime if and only if a == 2 
-            
+                 
+
+        // ******* START write  A1  as  A1_odd * 2^k. **********
+        //emulating this but cheaply for bigints: while (a % 2 == 0) s /= 2;
+
         BigNumber memory a1 = prepare_sub(a,one);
-       
-        // *******write  A1  as  A1_odd * 2^k.**********
+
         uint k = 1;
-        uint k_mask=1; //set it to you to keep it par with k
+        uint k_mask=1; //set it to 1 to keep it par with k
         uint a_ptr;
         uint val;
         assembly{ 
@@ -665,22 +701,22 @@ library BigNumberLib is usingOraclize {
         }
         bool bit_set = false;
         while(!bit_set){
-            if(k % 256 == 0){
+            if((k % 256) == 0){ //get next word should k reach 256.
                 a_ptr -= 32;
                 assembly {val := mload(a_ptr)}
                 k_mask = 1;
             }
             bit_set = ((val & k_mask) != 0);
-            k_mask*=2; //set next bit
+            k_mask*=2; //set next bit (left shift)
             k++;
         }        
         BigNumber memory A1_odd = right_shift(a1, k);
 
-        // **********************************************
+        // ******* END write  A1  as  A1_odd * 2^k. **********
 
         int j;
         uint num_checks = prime_checks_for_size(a.msb);
-        BigNumber memory  check;
+        BigNumber memory check;
         for (uint i = 0; i < num_checks; i++) {
 
             check = prepare_add(randomness[i], one);   
@@ -691,13 +727,14 @@ library BigNumberLib is usingOraclize {
         }
 
         //if we've got to here, a is likely a prime.
-        return true;
+        return true; //TODO return call to base contract.
     }
 
     //***************** End is_prime functions *************************************
     
 
     //takes in a bytes value and returns the value shifted to the right by 'value' bits.
+    //TODO use memcpy for cheap rightshift where input is multiple of 8 (byte size)
     function right_shift(BigNumber dividend, uint value) internal returns(BigNumber){
         bytes memory val;
         uint word_shifted;

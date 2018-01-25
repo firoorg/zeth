@@ -21,6 +21,9 @@ contract zerocoin {
       * @ https://github.com/zcoinofficial/zcoin/tree/master/src/libzerocoin.
       * struct and BigNumberLib.BigNumber storage values will be generated in this contract's constructor by the Zcoin team.
       */
+
+    mapping(uint => BigNumber) public is_prime_calls;
+
     address deployment; //address of contract creators. Ability to perform limited changes and for contract deployment. TBD
     bool set = false; //parameters set
  
@@ -49,7 +52,7 @@ contract zerocoin {
     //for hash function in serial number SoK verification
     BigNumberLib.BigNumber params_bytes;
 
-    //RSA-2048 Factoring Challenge encoded as bytes.
+    //RSA-2048 Factoring Challenge encoded as a bignum.
     BigNumberLib.BigNumber modulus; //RSA-2048
 
     //the following value is used in the accumulator verification and is equal to:
@@ -166,7 +169,7 @@ contract zerocoin {
     //********************************* Begin 'Mint' validation ****************************************************
     function validate_coin_mint(BigNumberLib.BigNumber commitment) internal returns (bool success){
         //TODO denominations.
-        BigNumberLib.BigNumber memory stored_commitment = commitments[keccak256(commitment)];
+        BigNumberLib.BigNumber memory stored_commitment = commitments[keccak256(commitment)]; //should return nothing
         assert (BigNumberLib.cmp(min_coin_value,commitment)==-1 && 
                 BigNumberLib.cmp(commitment, max_coin_value)==-1 && 
                 BigNumberLib.is_prime(commitment) &&
@@ -199,7 +202,7 @@ contract zerocoin {
                                BigNumberLib.BigNumber accumulator_commitment,
                                address output_address) internal returns (bool result) { //internal for now - will be made public/external
 
-        BigNumberLib.BigNumber memory stored_coin_serial_number = commitments[keccak256(coin_serial_number)];
+        BigNumberLib.BigNumber memory stored_coin_serial_number = commitments[keccak256(coin_serial_number)]; //should be empty if this is a new serial
 
         assert(verify_commitment_pok(commitment_pok, serial_number_commitment, accumulator_commitment) &&
                verify_accumulator_pok(accumulator_pok, accumulator, accumulator_commitment) &&
