@@ -3,7 +3,7 @@ pragma experimental ABIEncoderV2;
 
 import "../BigNumberLib.sol";
 
-contract zerocoin { 
+contract zerocoin_logic { 
 
     using BigNumberLib for *;
     /*
@@ -161,19 +161,65 @@ contract zerocoin {
     //*************************************** Begin Constructor **************************************************
     function zerocoin(address _in) public{
         require(!set && _in==deployment);
+        oraclize_setProof(proofType_Ledger); // sets the Ledger authenticity proof in the constructor
         //add parameters
         //initialize structures
     }
     //***************************************** End Constructor **************************************************
+
+
+
+    //***************************************** Begin Oraclize Randomness call ************************************
+    
+    // commitments are stored here until the callback from oraclize, at which point they are freed.
+    // the receipt gas should be returned to the original caller, rather than Oraclize - so users should provide 
+    // extra gas for this operation (well they'll have to provide gas anyway when you think about it),
+    // pass it to this contract, and this contract will remove the commitment when complete 
+    //(TODO research - also prob best to let this contract use it's gas for holding eth, and have a separate 'pool' contract for minted coins).
+    
+    mapping(bytes32 => BigNumberLib.BigNumber) public callback_commitments; 
+
+    // the callback function is called by Oraclize when the result is ready
+    // the oraclize_randomDS_proofVerify modifier prevents an invalid proof to execute this function code:
+    // the proof validity is fully verified on-chain
+    function __callback(bytes32 _queryId, string _result, bytes _proof){ 
+        if (msg.sender != oraclize_cbAddress()) throw;
+        
+        if (oraclize_randomDS_proofVerify__returnCode(_queryId, _result, _proof) != 0) {
+            // the proof verification has failed, do we need to take any action here? (depends on the use case)
+        } else { // proof verification has passed
+            //sort randomness into BigNumbers
+
+            //grab callback_commitment for queryID provided; wipe callback_commitment entry; call validate_coin_mint with this info.
+
+            //TODO how to specify gas for transaction? (look at this tomorrow, too tired now)
+
+        }
+    }
+
+    //***************************************** End Oraclize Randomness call **************************************
+
+
     
     //********************************* Begin 'Mint' validation ****************************************************
-    function validate_coin_mint(BigNumberLib.BigNumber commitment) internal returns (bool success){
-        //TODO denominations.
+
+    //validate_coin_mint requires a call to is_prime in BigNumberLib; the primality test needs to take random bytes.
+    function prepare_validate_coin_mint(BigNumberLib.BigNumber commitment) external payable {
+
+        //firstly ensure balance is enough for denomination specified. 
+        //if so, store gas necessary for rest of the call. (TODO)
+        uint N; //number of bytes to get (get msb of commitment, num bytes = (msb/8)+1, we need three random numbers so multiply by 3).
+        uint callbackGas = (N*5)+20000; // amount of gas we want Oraclize to set for the callback function (5 gas per byte in transaction payload + extra for callback)
+        bytes32 queryId = oraclize_newRandomDSQuery(0, N, callbackGas); // this function internally generates the correct oraclize_query and returns its queryId
+    }
+
+    function validate_coin_mint(BigNumberLib.BigNumber commitment) private returns (bool success){ //TODO instead of bool - perhaps log an event?
+        //TODO denominations & eth/gas handling.
         BigNumberLib.BigNumber memory stored_commitment = commitments[keccak256(commitment)]; //should return nothing
         assert (BigNumberLib.cmp(min_coin_value,commitment)==-1 && 
                 BigNumberLib.cmp(commitment, max_coin_value)==-1 && 
                 BigNumberLib.is_prime(commitment) &&
-                !(keccak256(stored_commitment)==keccak256(commitment))); //hash for cheap comparison
+                !(keccak256(stored_commitment)==keccak256(commitment))); //hash for cheap comparison TODO doesn't work
 
         //must also check that denomination of eth sent is correct
         
@@ -186,7 +232,7 @@ contract zerocoin {
         commitments[keccak256(commitment)] = commitment;
         commitment_list.push(commitment); //add to list and map
 
-        // add eth denomination to value pool
+        // add eth denomination to value pool.
 
         return true;
     }

@@ -78,7 +78,7 @@ library BigNumberLib {
         if(b.msb==0) return a;  
         bytes memory val;
         uint msb;
-        int compare = cmp(a,b);
+        int compare = cmp(a,b,false);
 
         if(a.neg || b.neg){
             if(a.neg && b.neg){
@@ -172,7 +172,7 @@ library BigNumberLib {
         }
         
         //we now calc the new msb.
-        //with addition, if we assume that a is at least equal to b, the the resulting msb will be a_msb or ++a_msb.
+        //with addition, if we assume that a is at least equal to b, then the resulting msb will be a_msb or ++a_msb.
         //we check for that here
         uint res; 
         assembly {res := mload(add(c,0x20))} //get msword of result
@@ -186,7 +186,7 @@ library BigNumberLib {
         bytes memory val;
         int compare;
         uint msb;
-        compare = cmp(a,b);
+        compare = cmp(a,b,false);
         if(a.neg || b.neg) {
             if(a.neg && b.neg){           
                 if(compare == 1) { 
@@ -225,7 +225,7 @@ library BigNumberLib {
 
  
 
-   //sub function. similar to add above, except we pass the msb of both values (this is needed for msb calculation at the end)
+   //sub function
    function bn_sub(bytes a, bytes b) private returns (bytes memory, uint) {
         //assuming here that values arrive from prepare_sub as a=max and b=min (or both the same size)
         bytes memory c;
@@ -284,7 +284,7 @@ library BigNumberLib {
             
             mstore(0x40, add(c,add(0x20, a_len))) // Update the msize offset to be our memory reference plus the amount of bytes we're using
         }
-
+        //calculate the new msb.
         uint uint_size;
         assembly{ uint_size := mload(add(c,0x20))} 
         uint new_msb = get_uint_size(uint_size) + ((c.length-32)*8);
@@ -342,12 +342,12 @@ library BigNumberLib {
         
      }
     
-    //this method for bn_div allows users to pass their own result and have the contract verify it - therefore the result is valid.
-    //this is based on the idea that as we already have multiplication, it's far cheaper to use that than roll an expensive native div operation.
+    //this method for division allows users to pass their own inputs and results and have the contract verify it - therefore validating that result.
+    //this is based on the idea that as we already have multiplication, it's far cheaper to use that than roll an expensive native division implementation.
     function bn_div(BigNumber a, BigNumber b, BigNumber result) internal returns(BigNumber contract_result){
         //(a/b = result) == (a = b * result)
         //integer division only; therefore:
-        //  verify ((b*result) + a % (b*result)) == a.
+        //  verify ((b*result) + (a % (b*result))) == a.
         //eg. 17/7 == 2:
         //  verify  (7*2) + (17 % (7*2)) == 17
 
@@ -359,20 +359,20 @@ library BigNumberLib {
         
         BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0);
 
-        require(!(cmp(b,zero)==0)); //require denominator to not be zero.
+        require(!(cmp(b,zero,true)==0)); //require denominator to not be zero.
 
-        if(cmp(result,zero)==0){                //if result is 0:
-            if(cmp(a,b)==-1) return result;     // return zero if a<b (numer<denom)
+        if(cmp(result,zero,true)==0){                //if result is 0:
+            if(cmp(a,b,true)==-1) return result;     // return zero if a<b (numer<denom)
             else throw;                         // else fail.
         }      
 
         BigNumber memory fst = bn_mul(b,result); // do multiplication (b * result)
-        if(cmp(fst,a)==0) return result;  // check if we already have a. if so, no mod necessary, and return result.
+        if(cmp(fst,a,true)==0) return result;  // check if we already have a (ie. no remainder after division). if so, no mod necessary, and return result.
 
         BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
         BigNumber memory snd = prepare_modexp(a,one,fst); //a mod (b*result)
 
-        require(cmp(prepare_add(fst,snd),a)==0); // ((b*result) + a % (b*result)) == a
+        require(cmp(prepare_add(fst,snd),a,true)==0); // ((b*result) + a % (b*result)) == a
 
         return result;
     }
@@ -380,7 +380,7 @@ library BigNumberLib {
     function prepare_modexp(BigNumber base, BigNumber exponent, BigNumber modulus) internal returns(BigNumber result) {
         if(exponent.neg==true){ 
             // base^-exp = (base^-1)^exp
-            //base = inverse(base, modulus); TODO implement inverse function
+            //base = inverse(base, modulus); TODO implement inverse function. allow passing of another result value
             exponent.neg = false; //make e positive
         }
 
@@ -473,17 +473,15 @@ library BigNumberLib {
     function mod_inverse(BigNumber base, BigNumber modulus, BigNumber user_result) internal returns(BigNumber){
         //verify with modmul - verify (base * result) % m == 1
         require(base.neg==false && modulus.neg==false); //assert positivity of inputs
-        BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
-        
+            
         /*
          * the following proves:
          * - user result passed is correct for values a and m
          * - modular inverse exists for values a and m.
          * otherwise it fails.
-         */
-        //valid = (cmp(modmul(base, user_result, modulus),one)==0);
-        //TODO return result? more intuitive but more expensive; however user has to handle this function in a different way anyway..
-        require(struct_cmp(modmul(base, user_result, modulus),one)==0);
+         */        
+        BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
+        require(cmp(modmul(base, user_result, modulus),one,true)==0);
 
         return user_result;
      }
@@ -495,15 +493,23 @@ library BigNumberLib {
         }
     }
 
-    function struct_cmp(BigNumber a, BigNumber b) internal returns(int){
-        //the function only runs should both values have the same sign.
-        //switch is used to decide this; if both negative, invert result; if both positive, switch has no effect.
-        int trigger = 1;
-        if(a.neg && b.neg) trigger = -1;
-        else if(a.neg==false && b.neg==true) return 1;
-        else if(a.neg==true && b.neg==false) return -1;
+    function cmp(BigNumber a, BigNumber b, bool signed) internal returns(int){
+        /*
+        BigNumber comparison. 'signed' parameter indiciates whether to consider the sign of the inputs
+        'trigger' is used to decide this - 
+            if both negative, invert the result; 
+            if both positive (or signed==false), trigger has no effect;
+            if differing signs, we return immediately based on input.
+         */
 
-        if(a.msb>b.msb) return 1*trigger;
+        int trigger = 1;
+        if(signed){
+            if(a.neg && b.neg) trigger = -1;
+            else if(a.neg==false && b.neg==true) return 1;
+            else if(a.neg==true && b.neg==false) return -1;
+        }
+
+        if(a.msb>b.msb) return  1*trigger;
         if(b.msb>a.msb) return -1*trigger;
 
         uint a_ptr;
@@ -526,36 +532,6 @@ library BigNumberLib {
 
             if(a_word>b_word) return 1*trigger;
             if(b_word>a_word) return -1*trigger;
-
-        }
-
-        return 0; //same value.
-    }
-
-    function cmp(BigNumber a, BigNumber b) internal returns(int){
-        if(a.msb>b.msb) return 1;
-        if(b.msb>a.msb) return -1;
-
-        uint a_ptr;
-        uint b_ptr;
-        uint a_word;
-        uint b_word;
-
-        uint len = a.val.length; //msb is same so no need to check length.
-
-        assembly{
-            a_ptr := add(mload(a),0x20) 
-            b_ptr := add(mload(b),0x20) // 'a' and 'b' store the memory address of 'val' of the struct.
-        }
-
-        for(uint i=0; i<len;i+=32){
-            assembly{
-                a_word := mload(add(a_ptr,i))
-                b_word := mload(add(b_ptr,i))
-            }
-
-            if(a_word>b_word) return 1;
-            if(b_word>a_word) return -1;
 
         }
 
@@ -647,21 +623,21 @@ library BigNumberLib {
         /* b >= 100 */ 27;
     }
 
-    // //returns -  0: likely prime, 1: composite number (definite non-prime).
+    // returns -  0: likely prime, 1: composite number (definite non-prime).
     function witness(BigNumber w, BigNumber a, BigNumber a1, BigNumber a1_odd, uint k) private returns (int){
         BigNumber memory one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1); 
         w = prepare_modexp(w, a1_odd, a); // w := w^a1_odd mod a
 
-        if (cmp(w,one)==0) return 0; // probably prime (?)
+        if (cmp(w,one,true)==0) return 0; // probably prime
                            
-        if (cmp(w, a1)==0) return 0; // w == -1 (mod a), 'a' is probably prime
+        if (cmp(w, a1,true)==0) return 0; // w == -1 (mod a), 'a' is probably prime
                            
         while (--k != 0) {
             w = modmul(w,w,a); // w := w^2 mod a TODO: make a sqrmod function (first part of mul anyway - just turning into function)
              
-            if (cmp(w,one)==0) return 1;// 'a' is composite, otherwise a previous 'w' would have been == -1 (mod 'a')
+            if (cmp(w,one,true)==0) return 1;// 'a' is composite, otherwise a previous 'w' would have been == -1 (mod 'a')
                                     
-            if (cmp(w, a1)==0) return 0; // w == -1 (mod a), 'a' is probably prime
+            if (cmp(w, a1,true)==0) return 0; // w == -1 (mod a), 'a' is probably prime
                           
         }
         /*
@@ -671,27 +647,8 @@ library BigNumberLib {
         return 1;
     }
 
-    //executes Miller-Rabin Primality Test to see whether input bignum is prime or not.
-    //number of iterations of the test will be calculated internally
-    function is_prime(BigNumber a, BigNumber[] randomness) internal returns (bool){
-
-        //TODO ensure input is coming from accompanying randomness contract (at address specified)
-        BigNumber memory zero = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000000",false,0); 
-        BigNumber memory  one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1); 
-        BigNumber memory  two = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000002",false,2); 
-
-        if (cmp(a, one) != 1) return false; // if value is <= 1
-                    
-        // first look for small factors
-        if (is_even(a)==1) return (cmp(a, two)==0); // if a is even: a is prime if and only if a == 2 
-                 
-
-        // ******* START write  A1  as  A1_odd * 2^k. **********
-        //emulating this but cheaply for bigints: while (a % 2 == 0) s /= 2;
-
-        BigNumber memory a1 = prepare_sub(a,one);
-
-        uint k = 1;
+    function get_k(BigNumberLib.BigNumber a, BigNumberLib.BigNumber a1) private returns (uint k){
+        k = 1;
         uint k_mask=1; //set it to 1 to keep it par with k
         uint a_ptr;
         uint val;
@@ -709,10 +666,23 @@ library BigNumberLib {
             bit_set = ((val & k_mask) != 0);
             k_mask*=2; //set next bit (left shift)
             k++;
-        }        
-        BigNumber memory A1_odd = right_shift(a1, k);
+        }              
+    }
 
-        // ******* END write  A1  as  A1_odd * 2^k. **********
+    //executes Miller-Rabin Primality Test to see whether input bignum is prime or not.
+    //number of iterations of the test will be calculated internally
+    function is_prime(BigNumber a, BigNumber[3] randomness) internal returns (bool){
+        BigNumber memory  one = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1); 
+        BigNumber memory  two = BigNumber(hex"0000000000000000000000000000000000000000000000000000000000000002",false,2); 
+
+        if (cmp(a, one,true) != 1) return false; // if value is <= 1 - ok
+                    
+        // first look for small factors
+        if (is_even(a)==1) return (cmp(a, two,true)==0); // if a is even: a is prime if and only if a == 2 - ok
+                 
+        BigNumber memory a1 = prepare_sub(a,one); // - ok
+        uint k = get_k(a,a1); // - ok but need to debug
+        BigNumber memory a1_odd = right_shift(a1, k);
 
         int j;
         uint num_checks = prime_checks_for_size(a.msb);
@@ -722,12 +692,12 @@ library BigNumberLib {
             check = prepare_add(randomness[i], one);   
             // now 1 <= check < a.
 
-            j = witness(check, a, a1, A1_odd, k);
+            j = witness(check, a, a1, a1_odd, k);
             if (j == -1 || j == 1) return false;
         }
 
         //if we've got to here, a is likely a prime.
-        return true; //TODO return call to base contract.
+        return true;
     }
 
     //***************** End is_prime functions *************************************
